@@ -29,7 +29,7 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ══════════════ إعدادات البوت والسيرفر ══════════════
-TOKEN = "8300157614:AAG6MYut6Ce8EjZ6ZMjoqDwO1a9QDGFs2bM"
+TOKEN = "8300157614:AAEuYR4uP6wwD55ILERH3H3cTD30q25TycU"
 OWNER_USERNAME = "O_SOHAIB_O"
 PUBLIC_GROUP_ID = -1002493822482
 
