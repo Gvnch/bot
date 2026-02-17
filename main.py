@@ -1,3 +1,21 @@
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+def run_server():
+    server = HTTPServer(("0.0.0.0", 10000), handler)
+    server.serve_forever()
+
+Thread(target=run_server).start()
+
 import telebot
 from telebot import types
 import time
