@@ -1,3 +1,21 @@
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+def run_server():
+    server = HTTPServer(("0.0.0.0", 10000), handler)
+    server.serve_forever()
+
+Thread(target=run_server).start()
+
 import telebot
 from telebot import types
 import time
@@ -11,7 +29,7 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ══════════════ إعدادات البوت والسيرفر ══════════════
-TOKEN = "8300157614:AAG6MYut6Ce8EjZ6ZMjoqDwO1a9QDGFs2bM"
+TOKEN = "8300157614:AAE2QH9Hx-T7pYx8tFScLki-txli6DWlcWA"
 OWNER_USERNAME = "O_SOHAIB_O"
 PUBLIC_GROUP_ID = -1002493822482
 
