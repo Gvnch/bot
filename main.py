@@ -36,7 +36,7 @@ Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
 # ⚠️ ضع التوكن الخاص بك هنا
-TOKEN = "8300157614:AAF7re_2clPSOC0hl8wLg1RpqyKHpCP5q-Y"
+TOKEN = "8300157614:AAEob3NY0woxB4zhChSy1GCUj1eDZUNyYTQ"
 
 OWNER_USERNAME = "O_SOHAIB_O"
 OWNER_CHAT_ID = None
