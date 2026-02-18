@@ -1,23 +1,5 @@
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
-
-def run_server():
-    server = HTTPServer(("0.0.0.0", 10000), handler)
-    server.serve_forever()
-
-Thread(target=run_server).start()
-
-from threading import Thread
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 import time
@@ -42,13 +24,17 @@ class handler(BaseHTTPRequestHandler):
         pass
 
 def run_server():
-    server = HTTPServer(("0.0.0.0", 10000), handler)
-    server.serve_forever()
+    try:
+        server = HTTPServer(("0.0.0.0", 10000), handler)
+        server.serve_forever()
+    except:
+        pass
 
 Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
-TOKEN = os.environ.get("8300157614:AAH3bPD2lYMAFgqxCV_jLsVWHBDse2JFchY", "8300157614:AAH3bPD2lYMAFgqxCV_jLsVWHBDse2JFchY")
+# ضع التوكن هنا
+TOKEN = os.environ.get("BOT_TOKEN", "8300157614:AAEk9nvLXncrRtiQfZpCepl5J6T4TzD-siY")
 OWNER_USERNAME = "O_SOHAIB_O"
 OWNER_CHAT_ID = None
 PUBLIC_GROUP_ID = -1002493822482
@@ -59,8 +45,7 @@ try:
     BOT_ID = BOT_INFO.id
     BOT_USERNAME = BOT_INFO.username
 except:
-    print("❌ التوكن غير صحيح أو لا يوجد اتصال")
-    exit()
+    pass
 
 # ══════════════ الذاكرة ══════════════
 games = {}
@@ -68,8 +53,7 @@ user_to_game = {}
 bot_lock = threading.Lock()
 wallets_db = {}
 profiles_db = {}
-whisper_db = {}
-ally_requests = {}
+# تم حذف whisper_db
 hall_of_fame = {
     "wins": {}, "surgeon_kills": {}, "doc_saves": {},
     "observer_reveals": {}, "bombs": {}, "deaths": {},
@@ -105,7 +89,6 @@ DOCTOR_FAIL_CHANCE = 0.1
 WIN_REWARD = 60
 LOSE_REWARD = 10
 MVP_BONUS = 25
-ALLY_BONUS = 15
 
 ROOM_NAMES = {
     1: "🛏 الجناح A",
@@ -292,7 +275,6 @@ TITLE_DEFS = {
     "defuser": {"icon": "🔧", "name": "نازع الفتيل", "desc": "أبطل القنبلة"},
     "phantom": {"icon": "👻", "name": "الشبح", "desc": "ما أحد صوّت عليه"},
     "betrayed": {"icon": "🗡️", "name": "المطعون", "desc": "مات بالمشرط نهاراً"},
-    "allied": {"icon": "🤝", "name": "الحليف", "desc": "تحالف مع آخر"},
 }
 
 SHOP_ITEMS = {
@@ -397,7 +379,6 @@ def get_profile(uid):
             "best_streak": 0, "current_streak": 0,
             "vote_accuracy": [0, 0],
             "roles_played": {},
-            "allies": {},
             "enemies": {},
             "titles_earned": [],
             "xp": 0,
@@ -696,12 +677,9 @@ def new_game_data(gtype, host_id, gid):
         "original_team": {},
         "evil_chat_ids": set(),
         "suspect_votes": {},
-        "ally_pairs": set(),
-        "ally_pending": {},
         "joker_holder": None, "joker_used": False,
         "joker_effect": None,
         "dramatic_vote_data": None,
-        "whisper_used": set(),
         "stats": {
             "msg_count": {}, "first_death": None,
             "surgeon_uid": None,
@@ -713,7 +691,6 @@ def new_game_data(gtype, host_id, gid):
         },
         "pinned_mids": [],
         "winners_team": None,
-        "cancel_ally_used": set(),
     }
 
 
@@ -844,14 +821,16 @@ def build_lobby(cid):
     n = len(pp)
 
     if gt == "hospital":
-        title = "🏥 المستشفى الملعون"
         mn = MIN_HOSPITAL
+        title = "🏥 **المستشفى الملعون**"
+        flavor_text = "الأبواب تصرّ... ورائحة المعقمات تختلط برائحة الدم القديم.\nالأسرّة باردة تنتظر أجساداً دافئة...\n\nهل تجرؤ على حجز مكانك؟"
     else:
-        title = "🗳 حلبة التصويت"
         mn = MIN_VOTE
+        title = "⚖️ **حلبة التصويت**"
+        flavor_text = "المحكمة انعقدت... القاضي مجهول والجلاد بينكم.\nجهّز لسانك، فالحجة الضعيفة تعني الموت.\n\nمن سيخرج بريئاً؟"
 
     if n == 0:
-        pt = "   👻 <i>الأسرّة فارغة… في انتظار الضحايا</i>"
+        pt = "   👻 <i>المكان موحش وفارغ...</i>"
     else:
         lines = []
         for u, p in pp.items():
@@ -864,32 +843,23 @@ def build_lobby(cid):
     m, sc = divmod(max(0, rem), 60)
     ts = f"{m}:{sc:02d}" if m else f"{sc}s"
 
-    ally_section = ""
-    ally_p = g.get("ally_pairs", set())
-    if ally_p:
-        al = []
-        for pair in ally_p:
-            pair_list = list(pair)
-            if len(pair_list) == 2:
-                u1, u2 = pair_list
-                if u1 in pp and u2 in pp:
-                    al.append(f"   🤝 {pp[u1]['name']} ↔ {pp[u2]['name']}")
-        if al:
-            ally_section = "\n\n🤝 <b>التحالفات:</b>\n\n" + "\n".join(al)
-
     return (
-        f"{'🎬' if gt == 'hospital' else '🎤'} <b>{title}</b>\n\n"
+        f"{title}\n\n"
         f"⏳ {bar}  <b>{ts}</b>\n\n"
-        f"👥 <b>المنتظرون ({n}):</b>\n\n{pt}"
-        f"{ally_section}\n\n"
+        f"<i>{flavor_text}</i>\n\n"
+        f"👥 <b>الحاضرون ({n}):</b>\n\n{pt}\n\n"
         f"📌 الحد الأدنى: <b>{mn}</b> لاعبين\n\n"
-        f"🚀 /force_start · ⏱ <code>/time 30</code>\n"
-        f"🤝 <code>/ally @اسم</code> · ❌ <code>/cancel_ally</code>"
+        f"🚀 <code>/force_start</code>  ·  ⏱ <code>/time 30</code>"
     )
 
-def join_markup(gid):
+def join_markup(gid, gtype="hospital"):
     m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("🚪 ادخل المستشفى", callback_data=f"join_{gid}"))
+    if gtype == "hospital":
+        btn_text = "🚪 احجز سريراً"
+    else:
+        btn_text = "🩸 ادخل الحلبة"
+        
+    m.add(types.InlineKeyboardButton(btn_text, callback_data=f"join_{gid}"))
     return m
 
 def lobby_tick(cid, gid):
@@ -908,7 +878,7 @@ def lobby_tick(cid, gid):
                 if not valid_game(cid, gid):
                     return
                 txt = build_lobby(cid)
-                mk = join_markup(gid)
+                mk = join_markup(gid, gt)
             asset = ASSETS["LOBBY"] if gt == "hospital" else ASSETS["VOTE"]
             try:
                 if gt == "hospital":
@@ -930,7 +900,8 @@ def lobby_tick(cid, gid):
             if not valid_game(cid, gid) or games[cid]["phase"] != "joining":
                 return
             txt = build_lobby(cid)
-            mk = join_markup(games[cid]["game_id"])
+            gt = games[cid]["type"]
+            mk = join_markup(games[cid]["game_id"], gt)
             mid = games[cid].get("lobby_mid")
             mt = games[cid].get("lobby_mt", "text")
         if mid:
@@ -962,9 +933,7 @@ def cb_join(call):
         ex = find_game_for_user(uid)
         if ex and ex != cid:
             return bot.answer_callback_query(call.id, "⛔ أنت في مستشفى آخر", show_alert=True)
-        if uid in games[cid].get("cancel_ally_used", set()):
-            return bot.answer_callback_query(call.id,
-                "⛔ ألغيت تحالفك… لا يمكنك الدخول هذه الجولة", show_alert=True)
+            
         games[cid]["players"][uid] = {
             "name": clean_name(call.from_user.first_name),
             "role": "Patient", "alive": True
@@ -972,12 +941,14 @@ def cb_join(call):
         user_to_game[uid] = cid
         games[cid]["last_activity"] = time.time()
         cnt = len(games[cid]["players"])
+        gt = games[cid]["type"]
+        
     bot.answer_callback_query(call.id, f"✅ دخلت ({cnt})")
     with bot_lock:
         if not valid_game(cid, gid):
             return
         txt = build_lobby(cid)
-        mk = join_markup(games[cid]["game_id"])
+        mk = join_markup(games[cid]["game_id"], gt)
         mid = games[cid].get("lobby_mid")
         mt = games[cid].get("lobby_mt", "text")
     if mid:
@@ -1099,9 +1070,8 @@ def group_cmd(m):
     raw = m.text.split()[0].split("@")[0].lower()
 
     deletable = {"/hospital", "/vote", "/force_start", "/cancel",
-                 "/done", "/time", "/ally", "/cancel_ally",
-                 "/suspect", "/whisper", "/commands", "/hall",
-                 "/rooms_cancel"}
+                 "/done", "/time", "/suspect",
+                 "/commands", "/hall", "/rooms_cancel"}
     if raw in deletable:
         delete_msg(cid, m.message_id)
 
@@ -1115,14 +1085,8 @@ def group_cmd(m):
         do_force(m)
     elif raw in ("/cancel", "/done"):
         do_cancel(m)
-    elif raw == "/ally":
-        do_ally(m)
-    elif raw == "/cancel_ally":
-        do_cancel_ally(m)
     elif raw == "/suspect":
         do_suspect(m)
-    elif raw == "/whisper":
-        do_whisper_group(m)
     elif raw == "/commands":
         do_commands(m)
     elif raw == "/hall":
@@ -1156,7 +1120,7 @@ def init_game(msg, gtype):
         gid = int(time.time() * 1000) % 2147483647
         games[cid] = new_game_data(gtype, uid, gid)
     txt = build_lobby(cid)
-    mk = join_markup(gid)
+    mk = join_markup(gid, gtype)
     asset = ASSETS["LOBBY"] if gtype == "hospital" else ASSETS["VOTE"]
     try:
         if gtype == "hospital":
@@ -1251,168 +1215,13 @@ def do_rooms_cancel(m):
         safe_send(cid, "🏠 <i>نظام الغرف: معطّل (الكل في غرفة واحدة)</i>")
 
 
-# ══════════════ التحالفات ══════════════
-def do_ally(m):
-    cid, uid = m.chat.id, m.from_user.id
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "joining":
-            return
-        if uid not in games[cid]["players"]:
-            return safe_send(cid, "⚠️ <i>ادخل المستشفى أولاً…</i>")
-        if uid in games[cid].get("cancel_ally_used", set()):
-            return safe_send(cid, "⚠️ <i>ألغيت تحالفك… لا يمكنك التحالف مجدداً هذه الجولة</i>")
-        for pair in games[cid]["ally_pairs"]:
-            if uid in pair:
-                return safe_send(cid, "⚠️ <i>لديك حليف بالفعل…</i>")
-
-    parts = m.text.split()
-    if len(parts) < 2:
-        return safe_send(cid, "⚠️ <i>استخدم: /ally @اسم</i>")
-
-    target_uid = None
-    if m.entities:
-        for ent in m.entities:
-            if ent.type == "mention":
-                mentioned = m.text[ent.offset + 1:ent.offset + ent.length]
-                with bot_lock:
-                    for u, p in games[cid]["players"].items():
-                        try:
-                            member = bot.get_chat_member(cid, u)
-                            if member.user.username and member.user.username.lower() == mentioned.lower():
-                                target_uid = u
-                                break
-                        except:
-                            continue
-            elif ent.type == "text_mention":
-                target_uid = ent.user.id
-
-    if not target_uid:
-        return safe_send(cid, "⚠️ <i>لم أجد هذا اللاعب…</i>")
-
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "joining":
-            return
-        if target_uid not in games[cid]["players"]:
-            return safe_send(cid, "⚠️ <i>هذا اللاعب ليس في المستشفى…</i>")
-        if target_uid == uid:
-            return safe_send(cid, "⚠️ <i>لا تستطيع التحالف مع نفسك…</i>")
-        if target_uid in games[cid].get("cancel_ally_used", set()):
-            return safe_send(cid, "⚠️ <i>هذا اللاعب ألغى تحالفه…</i>")
-        for pair in games[cid]["ally_pairs"]:
-            if target_uid in pair:
-                return safe_send(cid, "⚠️ <i>لديه حليف بالفعل…</i>")
-
-        games[cid]["ally_pending"][uid] = target_uid
-        un = pname(uid, games[cid]["players"][uid]["name"])
-        tn = pname(target_uid, games[cid]["players"][target_uid]["name"])
-
-    mk = types.InlineKeyboardMarkup()
-    mk.add(
-        types.InlineKeyboardButton("✅ أقبل", callback_data=f"allyacc_{cid}_{uid}"),
-        types.InlineKeyboardButton("❌ أرفض", callback_data=f"allyrej_{cid}_{uid}"))
-    safe_send(cid,
-        f"🤝 {un} يطلب التحالف مع {tn}\n\n"
-        f"<i>إذا قُبل… ستشاركان المصير (لكن لن تعرفا أدوار بعضكما)</i>",
-        reply_markup=mk)
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("allyacc_"))
-def cb_ally_accept(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, requester = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "joining":
-            return bot.answer_callback_query(call.id, "⏰ فات الأوان", show_alert=True)
-        pending = games[cid].get("ally_pending", {})
-        if requester not in pending or pending[requester] != uid:
-            return bot.answer_callback_query(call.id, "❌ ليس لك", show_alert=True)
-        for pair in games[cid]["ally_pairs"]:
-            if uid in pair or requester in pair:
-                return bot.answer_callback_query(call.id, "⚠️ أحدكما متحالف", show_alert=True)
-        del pending[requester]
-        games[cid]["ally_pairs"].add(frozenset([uid, requester]))
-        un = pname(requester, games[cid]["players"][requester]["name"])
-        tn = pname(uid, games[cid]["players"][uid]["name"])
-
-    bot.answer_callback_query(call.id, "✅ تم التحالف!")
-    try:
-        bot.edit_message_text(
-            f"🤝 <b>تحالف!</b> {un} ↔ {tn}\n\n"
-            f"<i>إذا مات أحدهما… يموت الآخر معه</i>",
-            cid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("allyrej_"))
-def cb_ally_reject(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, requester = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        pending = games[cid].get("ally_pending", {})
-        if requester not in pending or pending[requester] != uid:
-            return bot.answer_callback_query(call.id, "❌ ليس لك", show_alert=True)
-        del pending[requester]
-    bot.answer_callback_query(call.id, "❌ رفضت")
-    try:
-        bot.edit_message_text("❌ <i>رُفض طلب التحالف</i>",
-            cid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-
-
-def do_cancel_ally(m):
-    cid, uid = m.chat.id, m.from_user.id
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "joining":
-            return
-        if uid not in games[cid]["players"]:
-            return
-        found_pair = None
-        for pair in games[cid]["ally_pairs"]:
-            if uid in pair:
-                found_pair = pair
-                break
-        if not found_pair:
-            return safe_send(cid, "⚠️ <i>ليس لديك تحالف لتلغيه…</i>")
-
-        games[cid]["ally_pairs"].discard(found_pair)
-        games[cid]["cancel_ally_used"].add(uid)
-        user_to_game.pop(uid, None)
-        del games[cid]["players"][uid]
-        partner = [u for u in found_pair if u != uid][0]
-        un = clean_name(m.from_user.first_name)
-        pn = games[cid]["players"].get(partner, {}).get("name", "?")
-
-    safe_send(cid,
-        f"💔 <b>{un}</b> ألغى تحالفه مع <b>{pn}</b>\n"
-        f"<i>{un} غادر ولن يعود هذه الجولة…</i>")
-
-
-def kill_ally(g, uid):
-    dead_allies = []
-    for pair in list(g.get("ally_pairs", set())):
-        if uid in pair:
-            partner = [u for u in pair if u != uid][0]
-            if g["players"].get(partner, {}).get("alive", False):
-                kill_player(g, partner)
-                dead_allies.append(partner)
-    return dead_allies
-
-
 # ══════════════ نظام الشك ══════════════
 def do_suspect(m):
     cid, uid = m.chat.id, m.from_user.id
+    
+    # حذف الرسالة فوراً لزيادة التوتر
+    delete_msg(cid, m.message_id)
+
     with bot_lock:
         if cid not in games or games[cid]["phase"] != "discussion":
             return
@@ -1471,91 +1280,29 @@ def show_suspect_bar(cid):
             "📊 <b>مقياس الشك:</b>\n\n" + "\n".join(lines))
 
 
-# ══════════════ الهمسات في النقاش ══════════════
-def do_whisper_group(m):
-    cid, uid = m.chat.id, m.from_user.id
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "discussion":
-            return
-        if uid not in games[cid]["players"] or not games[cid]["players"][uid]["alive"]:
-            return
-        if uid in games[cid].get("whisper_used", set()):
-            return safe_send(cid, "⚠️ <i>استخدمت همستك بالفعل هذه الجولة…</i>")
-
-    target_uid = None
-    if m.entities:
-        for ent in m.entities:
-            if ent.type == "mention":
-                mentioned = m.text[ent.offset + 1:ent.offset + ent.length]
-                with bot_lock:
-                    for u, p in games[cid]["players"].items():
-                        try:
-                            member = bot.get_chat_member(cid, u)
-                            if member.user.username and member.user.username.lower() == mentioned.lower():
-                                target_uid = u
-                                break
-                        except:
-                            continue
-            elif ent.type == "text_mention":
-                target_uid = ent.user.id
-
-    if not target_uid:
-        return
-
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "discussion":
-            return
-        if target_uid not in games[cid]["players"] or not games[cid]["players"][target_uid]["alive"]:
-            return
-        if target_uid == uid:
-            return
-        games[cid]["whisper_used"].add(uid)
-        sender_name = games[cid]["players"][uid]["name"]
-        target_name = games[cid]["players"][target_uid]["name"]
-        gid = games[cid]["game_id"]
-
-    whisper_key = f"wg_{cid}_{uid}_{target_uid}"
-    with bot_lock:
-        whisper_db[whisper_key] = {
-            "cid": cid, "sender": uid, "target": target_uid,
-            "sender_name": sender_name, "target_name": target_name,
-            "text": None, "gid": gid
-        }
-    safe_pm(uid,
-        f"💌 <b>اكتب همستك لـ {target_name}…</b>\n\n"
-        f"<i>اكتب رسالتك الآن:</i>")
-    safe_send(cid,
-        f"💌 <i>أحدهم يكتب رسالة سرية لـ {pname(target_uid, target_name)}…</i>")
-
-
 # ══════════════ /commands ══════════════
 def do_commands(m):
     cid = m.chat.id
-    safe_send(cid,
+    cmd_text = (
         "📖 <b>أوامر المستشفى الملعون</b>\n\n"
-        "━━━ 🏥 <b>بدء اللعبة</b> ━━━\n"
-        "🏥 /hospital — افتح أبواب المستشفى\n"
-        "🗳 /vote — افتح حلبة التصويت\n"
-        "🚀 /force_start — ابدأ فوراً\n"
-        "⏱ /time [ثواني] — أضف وقت انتظار\n"
-        "🛑 /cancel — أغلق المستشفى\n"
-        "🏠 /rooms_cancel — تبديل نظام الغرف\n\n"
-        "━━━ 🤝 <b>التحالفات</b> ━━━\n"
-        "🤝 /ally @اسم — اطلب تحالفاً\n"
-        "❌ /cancel_ally — ألغِ تحالفك وغادر\n\n"
-        "━━━ 💬 <b>أثناء النقاش</b> ━━━\n"
-        "🔍 /suspect @اسم — سجّل شكّك\n"
-        "💌 /whisper @اسم — همسة سرية\n"
-        "🗡️ /kill — مشرط صدئ\n\n"
-        "━━━ 📊 <b>المعلومات</b> ━━━\n"
-        "🎭 /myrole — دورك\n"
-        "🟢 /alive — الأحياء\n"
-        "📜 /roles — الأدوار\n"
-        "📖 /rules — القواعد\n"
-        "📊 /profile — ملفك\n"
-        "💰 /wallet — محفظتك\n"
-        "🛒 /shop — المتجر\n"
-        "🏆 /hall — جدار الشهرة")
+        "<code>/hospital</code> - المستشفى\n"
+        "<code>/vote</code> - الحلبة\n"
+        "<code>/force_start</code> - بدء\n"
+        "<code>/time</code> - وقت\n"
+        "<code>/cancel</code> - إلغاء\n"
+        "<code>/rooms_cancel</code> - الغرف\n"
+        "<code>/suspect</code> - شك\n"
+        "<code>/kill</code> - قتل\n"
+        "<code>/myrole</code> - دورك\n"
+        "<code>/alive</code> - الأحياء\n"
+        "<code>/roles</code> - الأدوار\n"
+        "<code>/rules</code> - القواعد\n"
+        "<code>/profile</code> - ملفك\n"
+        "<code>/wallet</code> - محفظتك\n"
+        "<code>/shop</code> - المتجر\n"
+        "<code>/hall</code> - الشهرة\n"
+    )
+    safe_send(cid, cmd_text)
 
 
 def do_hall(m):
@@ -2518,15 +2265,12 @@ def resolve_night(cid, expected_rnd, expected_gid):
             if not valid_game(cid, gid):
                 return
             kill_player(games[cid], doc_fail_victim)
-            ally_dead = kill_ally(games[cid], doc_fail_victim)
             games[cid]["stats"]["doc_fails"] += 1
         mute_player(cid, doc_fail_victim)
         safe_send(cid,
             f"💉💀 <b>{doc_fail_name}</b>\n\n"
             f"<i>{random.choice(DOCTOR_FAIL_SCENES)}</i>\n\n"
             f"🎭 {doc_fail_role}")
-        for ally_uid in ally_dead:
-            _announce_ally_death(cid, gid, ally_uid)
         if not safe_sleep(cid, gid, 2):
             return
 
@@ -2555,16 +2299,12 @@ def resolve_night(cid, expected_rnd, expected_gid):
             if not valid_game(cid, gid):
                 return
             kill_player(games[cid], surgeon_kill)
-            ally_dead = kill_ally(games[cid], surgeon_kill)
             games[cid]["last_gasp_pending"][surgeon_kill] = True
             games[cid]["phase"] = "last_gasp_wait"
 
         mute_player(cid, surgeon_kill)
         safe_pm(surgeon_kill,
             "🩸 <i>أنفاسك الأخيرة… اكتب حتى 5 كلمات الآن</i>")
-
-        for ally_uid in ally_dead:
-            _announce_ally_death(cid, gid, ally_uid)
 
         if not safe_sleep(cid, gid, LAST_GASP_TIME):
             return
@@ -2613,12 +2353,9 @@ def resolve_night(cid, expected_rnd, expected_gid):
             tgt_role = ROLE_DISPLAY.get(pp2[tgt]["role"], "?")
             nu_role = ROLE_DISPLAY.get(pp2[nu]["role"], "?")
             kill_player(games[cid], tgt)
-            ally_dead_t = kill_ally(games[cid], tgt)
-            ally_dead_n = []
             if not is_evil:
                 if pp2[nu]["alive"]:
                     kill_player(games[cid], nu)
-                    ally_dead_n = kill_ally(games[cid], nu)
                 games[cid]["nurse_has_poison"][nu] = False
             else:
                 games[cid]["nurse_has_poison"][nu] = True
@@ -2633,8 +2370,6 @@ def resolve_night(cid, expected_rnd, expected_gid):
             safe_send(cid, f"💊 <b>{tn_}</b> <i>سقط مسموماً</i>  ·  {tgt_role}")
             safe_pm(nu, "💊 <i>أصبت هدفاً شريراً… حقنتك عادت ممتلئة</i>")
 
-        for a_uid in ally_dead_t + ally_dead_n:
-            _announce_ally_death(cid, gid, a_uid)
         if not safe_sleep(cid, gid, 1):
             return
 
@@ -2701,16 +2436,6 @@ def resolve_night(cid, expected_rnd, expected_gid):
         return
 
     start_discussion(cid, gid)
-
-
-def _announce_ally_death(cid, gid, ally_uid):
-    mute_player(cid, ally_uid)
-    with bot_lock:
-        if not valid_game(cid, gid):
-            return
-        aln = pname(ally_uid, games[cid]["players"][ally_uid]["name"])
-        alr = ROLE_DISPLAY.get(games[cid]["players"][ally_uid]["role"], "?")
-    safe_send(cid, f"💔 {aln} <i>سقط مع حليفه…</i>\n🎭 {alr}")
 
 
 def _try_promote_anesthetist(cid, gid):
@@ -2823,676 +2548,6 @@ def do_medical_drop(cid, gid):
         safe_pm(lucky, f"📦 وجدت <b>{iname}</b>\n<i>{idesc}</i>", reply_markup=mk)
 
 
-# ══════════════ النقاش والتصويت ══════════════
-def start_discussion(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid):
-            return
-        g = games[cid]
-        g["phase"] = "discussion"
-        g["last_activity"] = time.time()
-        g["suspect_votes"] = {}
-        g["whisper_used"] = set()
-        alive_count = len(get_alive(cid))
-        gid = g["game_id"]
-
-    open_discussion(cid)
-
-    safe_send(cid,
-        f"💬 <b>النقاش مفتوح</b>  ·  👥 {alive_count} أحياء\n\n"
-        f"<i>اتّهموا… دافعوا… استخدموا /suspect و /whisper\n"
-        f"معكم {DISCUSS_TIME} ثانية</i>")
-
-    with bot_lock:
-        if valid_game(cid, gid):
-            for uid_spy, p_spy in games[cid]["players"].items():
-                if p_spy["alive"] and has_item(uid_spy, "spy_glass"):
-                    targets_spy = get_alive_except(cid, uid_spy)
-                    if targets_spy:
-                        mk_spy = types.InlineKeyboardMarkup(row_width=2)
-                        mk_spy.add(*[types.InlineKeyboardButton(
-                            p["name"], callback_data=f"spy_{cid}_{t}")
-                            for t, p in targets_spy.items()])
-                        safe_pm(uid_spy, "🔭 <b>المنظار جاهز… اختر من تتجسس عليه</b>", reply_markup=mk_spy)
-
-    if not safe_sleep(cid, gid, DISCUSS_TIME):
-        return
-
-    show_suspect_bar(cid)
-
-    if not safe_sleep(cid, gid, 2):
-        return
-
-    start_voting(cid, gid)
-
-
-def start_voting(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid):
-            return
-        games[cid]["phase"] = "voting"
-        games[cid]["votes"] = {}
-        games[cid]["last_activity"] = time.time()
-        gid = games[cid]["game_id"]
-
-    silence_all(cid)
-
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton(
-        "⚖️ أدلِ بحكمك",
-        url=f"https://t.me/{BOT_USERNAME}?start=v_{cid}"))
-
-    vote_msg = safe_send(cid,
-        f"⚖️ <b>وقت الحساب</b>\n\n"
-        f"<i>من يستحق المحرقة؟ معكم {VOTE_TIME} ثانية</i>",
-        reply_markup=mk)
-
-    if vote_msg:
-        safe_pin(cid, vote_msg.message_id)
-        with bot_lock:
-            if valid_game(cid, gid):
-                games[cid]["pinned_mids"].append(vote_msg.message_id)
-
-    if not safe_sleep(cid, gid, VOTE_TIME):
-        return
-
-    tally_trial(cid, gid)
-
-
-def tally_trial(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid):
-            return
-        g = games[cid]
-        if g["phase"] != "voting":
-            return
-        votes = dict(g["votes"])
-        g["silenced"] = set()
-        gid = g["game_id"]
-
-        to_remove = []
-        for k in votes:
-            if isinstance(k, str) and k.startswith("i_"):
-                try:
-                    iuid = int(k.replace("i_", ""))
-                    if iuid in g["sedated_current"]:
-                        to_remove.append(k)
-                except:
-                    pass
-        for k in to_remove:
-            del votes[k]
-
-        if not votes:
-            no_votes = True
-            vote_list = []
-            top = []
-        else:
-            no_votes = False
-            counts = {}
-            for v in votes.values():
-                counts[v] = counts.get(v, 0) + 1
-            mx = max(counts.values())
-            top = [t for t, v in counts.items() if v == mx]
-            vote_list = []
-            for voter_uid, target_uid in votes.items():
-                if isinstance(voter_uid, int) and voter_uid in g["players"]:
-                    vote_list.append({
-                        "voter": pname(voter_uid, g["players"][voter_uid]["name"]),
-                        "target": pname(target_uid, g["players"][target_uid]["name"]),
-                    })
-            random.shuffle(vote_list)
-
-    with bot_lock:
-        if valid_game(cid, gid):
-            for mid in games[cid]["pinned_mids"]:
-                safe_unpin(cid, mid)
-            games[cid]["pinned_mids"] = []
-
-    if no_votes:
-        safe_send(cid, "🤷 <i>صمت مطبق… لا أحد أشار بإصبعه</i>")
-        if not safe_sleep(cid, gid, 2):
-            return
-        start_room_choosing(cid, gid)
-        return
-
-    safe_send(cid, "📨 <b>تُفتح الأصوات…</b>")
-    if not safe_sleep(cid, gid, 2):
-        return
-
-    for i, v in enumerate(vote_list):
-        if not is_game_active(cid, gid):
-            return
-        safe_send(cid, f"📩 الصوت {i+1}:\n  {v['voter']} ← صوّت على → {v['target']}")
-        time.sleep(2)
-
-    if not safe_sleep(cid, gid, 1):
-        return
-
-    if len(top) == 1:
-        sus = top[0]
-        with bot_lock:
-            if not valid_game(cid, gid):
-                return
-            games[cid]["defense_target"] = sus
-        start_defense(cid, gid, sus)
-    else:
-        names = []
-        with bot_lock:
-            if not valid_game(cid, gid):
-                return
-            for t in top:
-                names.append(pname(t, games[cid]["players"][t]["name"]))
-        safe_send(cid, f"🤝 <i>تعادل بين {' و '.join(names)}… لا إعدام</i>")
-        if not safe_sleep(cid, gid, 2):
-            return
-        start_room_choosing(cid, gid)
-
-
-def start_defense(cid, gid, sus_uid):
-    with bot_lock:
-        if not valid_game(cid, gid):
-            return
-        g = games[cid]
-        g["phase"] = "defense"
-        g["defense_target"] = sus_uid
-        sn = pname(sus_uid, g["players"][sus_uid]["name"])
-
-    silence_all(cid)
-    unmute_player(cid, sus_uid)
-
-    safe_send(cid,
-        f"⚖️ <b>{sn} في قفص الاتهام</b>\n\n"
-        f"🎤 <i>لديه {DEFENSE_TIME} ثانية للدفاع عن نفسه…</i>")
-
-    if not safe_sleep(cid, gid, DEFENSE_TIME):
-        return
-
-    with bot_lock:
-        if not valid_game(cid, gid):
-            return
-        games[cid]["phase"] = "confirming"
-        games[cid]["confirm_votes"] = {"yes": set(), "no": set()}
-        games[cid]["confirm_target"] = sus_uid
-        sn2 = pname(sus_uid, games[cid]["players"][sus_uid]["name"])
-
-    silence_all(cid)
-
-    mk = types.InlineKeyboardMarkup()
-    mk.add(
-        types.InlineKeyboardButton("🔥 حرق (0)", callback_data=f"cf_{cid}_y"),
-        types.InlineKeyboardButton("🕊 عفو (0)", callback_data=f"cf_{cid}_n"))
-
-    safe_send(cid,
-        f"⚖️ <b>الحكم على {sn2}</b>\n\n"
-        f"<i>حرق أم عفو؟ معكم {CONFIRM_TIME} ثانية</i>",
-        reply_markup=mk)
-
-    if not safe_sleep(cid, gid, CONFIRM_TIME):
-        return
-
-    resolve_confirm(cid, gid)
-
-
-def resolve_confirm(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid):
-            return
-        g = games[cid]
-        if g["phase"] != "confirming":
-            return
-        cv = g["confirm_votes"]
-        yc, nc = len(cv["yes"]), len(cv["no"])
-        sus = g.get("confirm_target")
-        pp = g["players"]
-        gid = g["game_id"]
-        if not sus or sus not in pp:
-            g["phase"] = "morning"
-            return
-        sn = pname(sus, pp[sus]["name"])
-        sr = pp[sus]["role"]
-        sd = ROLE_DISPLAY.get(sr, sr)
-        sus_team = get_original_team(g, sus)
-
-    if yc > nc:
-        with bot_lock:
-            if not valid_game(cid, gid):
-                return
-            kill_player(games[cid], sus)
-            ally_dead = kill_ally(games[cid], sus)
-            games[cid]["will_pending"][sus] = True
-            games[cid]["phase"] = "will_wait"
-
-        mute_player(cid, sus)
-
-        if sus_team == "evil":
-            flavor = "احترق الشر معه… أخيراً"
-        elif sus_team == "psycho":
-            flavor = "ابتسامته لم تختفِ حتى وهو يحترق…"
-        elif sus_team == "neutral":
-            flavor = "المحرّض سقط… لكن هل كان يستحق؟"
-        else:
-            flavor = "هل أحرقتم بريئاً؟ الندم قادم…"
-
-        safe_send(cid, f"🔥 <b>{sn} في المحرقة</b>\n\n🎭 {sd}\n\n<i>{flavor}</i>")
-        safe_pm(sus, "🔥 <i>النيران تلتهمك… اكتب وصيتك الأخيرة</i>\n\n<i>(حتى 500 حرف)</i>")
-
-        for a_uid in ally_dead:
-            _announce_ally_death(cid, gid, a_uid)
-
-        with bot_lock:
-            if valid_game(cid, gid):
-                surg_uid = games[cid]["stats"].get("surgeon_uid")
-                for voter_uid in cv["yes"]:
-                    prof = get_profile(voter_uid)
-                    prof["vote_accuracy"][1] += 1
-                    if sus == surg_uid or sus_team in ("evil",):
-                        prof["vote_accuracy"][0] += 1
-
-        if sr == "Psychopath":
-            trigger_bomb = False
-            with bot_lock:
-                if valid_game(cid, gid):
-                    bomb = games[cid]["bomb"]
-                    if bomb["is_set"] and bomb.get("owner") == sus:
-                        trigger_bomb = True
-                        games[cid]["stats"]["bomb_exploded"] = True
-            if trigger_bomb:
-                if not safe_sleep(cid, gid, 2):
-                    return
-                trigger_bomb_phase(cid, gid)
-                return
-            else:
-                safe_send(cid, "🤡 <i>المجنون نسي الفتيل… محظوظون</i>")
-
-        _try_promote_anesthetist(cid, gid)
-
-        if check_win_safe(cid, gid):
-            return
-
-        if not safe_sleep(cid, gid, WILL_TIME):
-            return
-
-        with bot_lock:
-            if valid_game(cid, gid):
-                games[cid]["will_pending"][sus] = False
-
-        start_room_choosing(cid, gid)
-    else:
-        safe_send(cid, f"🕊 <b>{sn} نجا من المحرقة… هذه المرة</b>")
-        if not safe_sleep(cid, gid, 2):
-            return
-        start_room_choosing(cid, gid)
-
-
-# ══════════════ القنبلة ══════════════
-def trigger_bomb_phase(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid):
-            return
-        g = games[cid]
-        g["phase"] = "bomb"
-        g["bomb"]["defuser"] = None
-        bomb_q = g["bomb"]["q"]
-        gid = g["game_id"]
-
-    open_discussion(cid)
-
-    safe_send(cid,
-        f"💣💣💣 <b>قنبلة!</b>\n\n"
-        f"❓ <b>{bomb_q}</b>\n\n"
-        f"<i>اكتبوا الجواب هنا بسرعة!\n"
-        f"معكم {BOMB_TIME} ثانية قبل الانفجار!</i>")
-
-    end_t = time.time() + BOMB_TIME
-    while time.time() < end_t:
-        time.sleep(1)
-        with bot_lock:
-            if not valid_game(cid, gid):
-                return
-            if games[cid]["phase"] == "defused":
-                break
-
-    with bot_lock:
-        if not valid_game(cid, gid):
-            return
-        phase = games[cid]["phase"]
-        defuser_uid = games[cid]["bomb"].get("defuser")
-        if defuser_uid and defuser_uid in games[cid]["players"]:
-            defuser_name = pname(defuser_uid, games[cid]["players"][defuser_uid]["name"])
-            games[cid]["stats"]["bomb_defuser"] = defuser_uid
-        else:
-            defuser_name = None
-
-    if phase == "defused":
-        dn = defuser_name or "أحدهم"
-        safe_send(cid, f"✅ <b>{dn} أبطل القنبلة في آخر لحظة!</b>\n\n<i>نفس واحد…</i>")
-        if not check_win_safe(cid, gid):
-            if not safe_sleep(cid, gid, 2):
-                return
-            start_room_choosing(cid, gid)
-    else:
-        with bot_lock:
-            if not valid_game(cid, gid):
-                return
-            raw = games[cid]["bomb"]["raw"]
-        safe_send(cid,
-            f"💥💥💥 <b>BOOM!</b>\n\n💡 الجواب كان: <b>{raw}</b>\n\n"
-            f"🤡 <i>المجنون يضحك من الجحيم…</i>")
-        with bot_lock:
-            if valid_game(cid, gid):
-                games[cid]["winners_team"] = "psycho"
-        show_results(cid, "🤡 <b>المجنون فجّر المستشفى… لا ناجين</b>")
-
-
-# ══════════════ التصويت والتأكيد callbacks ══════════════
-def dispatch_vote(uid, param):
-    try:
-        cid = int(param.replace("v_", ""))
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return safe_pm(uid, "🚫 المستشفى أُغلق…")
-        g = games[cid]
-        if uid not in g["players"]:
-            return safe_pm(uid, "🚫 لست من نزلاء هذا المكان…")
-
-        if g["type"] == "hospital":
-            if not g["players"][uid]["alive"]:
-                return safe_pm(uid, "💀 <i>الأموات لا يصوّتون…</i>")
-            if g["phase"] != "voting":
-                return safe_pm(uid, "⏰ <i>باب التصويت مغلق</i>")
-            if uid in g.get("silenced", set()):
-                return safe_pm(uid, "🧠 <i>صوتك مسروق… لسانك مقيّد</i>")
-            if uid in g["votes"]:
-                return safe_pm(uid, "✅ <i>أدليت بصوتك بالفعل</i>")
-            targets = get_alive_except(cid, uid)
-            prompt = "⚖️ <b>من يستحق المحرقة؟</b>"
-
-        elif g["type"] == "vote":
-            if g["phase"] != "voting_active":
-                return safe_pm(uid, "⏰ <i>التصويت مغلق</i>")
-            if uid in g["votes"]:
-                return safe_pm(uid, "✅ <i>صوّتت بالفعل</i>")
-            targets = {u: p for u, p in g["players"].items() if u != uid}
-            q = g.get("vote_question", "")
-            prompt = f"🗳 «{q}»\n\n<b>على من تصوّت؟</b>"
-        else:
-            return
-
-    if not targets:
-        return safe_pm(uid, "🚫 <i>لا أحد لتصوّت عليه</i>")
-    mk = types.InlineKeyboardMarkup(row_width=2)
-    mk.add(*[types.InlineKeyboardButton(
-        p["name"], callback_data=f"vote_{cid}_{t}")
-        for t, p in targets.items()])
-    safe_pm(uid, prompt, reply_markup=mk)
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("vote_"))
-def cb_vote(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, tid = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "⛔", show_alert=True)
-        g = games[cid]
-        if uid not in g["players"] or tid not in g["players"] or tid == uid:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if uid in g["votes"]:
-            return bot.answer_callback_query(call.id, "✅ سبق", show_alert=True)
-
-        gtype = g["type"]
-        if gtype == "hospital":
-            if g["phase"] != "voting" or not g["players"][uid]["alive"]:
-                return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-            if uid in g.get("silenced", set()):
-                return bot.answer_callback_query(call.id, "🧠 صوتك مسروق", show_alert=True)
-        elif gtype == "vote":
-            if g["phase"] != "voting_active":
-                return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-
-        is_inst = (gtype == "hospital"
-                  and g["players"].get(uid, {}).get("role") == "Instigator"
-                  and uid not in g.get("sedated_current", set()))
-        is_double = (g.get("joker_holder") == uid
-                    and g.get("joker_effect") == "double_vote")
-
-        g["votes"][uid] = tid
-        g["round_voted"].add(uid)
-        g["stats"]["voted_against"].setdefault(tid, set()).add(uid)
-        if is_inst:
-            g["votes"][f"i_{uid}"] = tid
-        if is_double:
-            g["votes"][f"d_{uid}"] = tid
-
-    bot.answer_callback_query(call.id, "✅ صوتك سُجّل")
-    try:
-        bot.edit_message_text("✅ <i>صوتك في الصندوق</i>",
-            uid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-    if gtype == "hospital":
-        with bot_lock:
-            if cid in games and uid in games[cid]["players"]:
-                vn = pname(uid, games[cid]["players"][uid]["name"])
-        safe_send(cid, f"📩 {vn} <i>ألقى حكمه في الصندوق</i>")
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cf_"))
-def cb_cf(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, ch = int(parts[1]), parts[2]
-    except:
-        return
-    with bot_lock:
-        if cid not in games or games[cid]["phase"] != "confirming":
-            return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        g = games[cid]
-        if uid not in g["players"] or not g["players"][uid]["alive"]:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if uid == g.get("confirm_target"):
-            return bot.answer_callback_query(call.id, "⚖️ لا تصوّت على مصيرك", show_alert=True)
-        cv = g["confirm_votes"]
-        cv["yes"].discard(uid)
-        cv["no"].discard(uid)
-        g["stats"]["voted_surgeon"].discard(uid)
-        if ch == "y":
-            cv["yes"].add(uid)
-            sus = g.get("confirm_target")
-            surg = g["stats"].get("surgeon_uid")
-            if sus and sus == surg:
-                g["stats"]["voted_surgeon"].add(uid)
-        else:
-            cv["no"].add(uid)
-        yc, nc = len(cv["yes"]), len(cv["no"])
-
-    bot.answer_callback_query(call.id, "✅")
-    mk = types.InlineKeyboardMarkup()
-    mk.add(
-        types.InlineKeyboardButton(f"🔥 حرق ({yc})", callback_data=f"cf_{cid}_y"),
-        types.InlineKeyboardButton(f"🕊 عفو ({nc})", callback_data=f"cf_{cid}_n"))
-    try:
-        bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=mk)
-    except:
-        pass
-
-
-# ══════════════ callbacks متنوعة ══════════════
-@bot.callback_query_handler(func=lambda c: c.data.startswith("reveal_"))
-def cb_reveal(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, choice = int(parts[1]), parts[2]
-    except:
-        return
-    with bot_lock:
-        if cid not in games or uid not in games[cid].get("qa_answers", {}):
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        games[cid]["qa_answers"][uid]["reveal"] = (choice == "y")
-    bot.answer_callback_query(call.id, "✅")
-    label = "✅ بتوقيعك" if choice == "y" else "🎭 مجهول"
-    try:
-        bot.edit_message_text(label, uid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("scalpel_"))
-def cb_scalpel(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, tid = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        g = games[cid]
-        if g["phase"] != "discussion":
-            return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        if uid not in g["players"] or not g["players"][uid]["alive"]:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        med = g["med_items"].get(uid)
-        if not med or med["item"] != "scalpel" or med.get("used"):
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if tid not in g["players"] or not g["players"][tid]["alive"] or tid == uid:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        med["used"] = True
-        kill_player(g, tid)
-        ally_dead = kill_ally(g, tid)
-        tn = pname(tid, g["players"][tid]["name"])
-        an = pname(uid, g["players"][uid]["name"])
-        tr = ROLE_DISPLAY.get(g["players"][tid]["role"], "?")
-        g["stats"]["scalpel_kills"].add(tid)
-        gid = g["game_id"]
-
-    bot.answer_callback_query(call.id, "🗡️")
-    try:
-        bot.edit_message_text("🗡️ <i>تم</i>", uid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-    mute_player(cid, tid)
-    safe_send(cid, f"🗡️ <b>في وضح النهار!</b>\n\n{an} غرس مشرطاً صدئاً في ظهر {tn}\n\n🎭 {tr}")
-    for ally_uid in ally_dead:
-        _announce_ally_death(cid, gid, ally_uid)
-    check_win_safe(cid, gid)
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("detect_"))
-def cb_detect(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, tid = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        g = games[cid]
-        if uid not in g["players"] or not g["players"][uid]["alive"]:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        med = g["med_items"].get(uid)
-        if not med or med["item"] != "detector" or med.get("used"):
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if tid not in g["players"] or tid == uid:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        med["used"] = True
-        tr = ROLE_DISPLAY.get(g["players"][tid]["role"], "?")
-        tn = g["players"][tid]["name"]
-    bot.answer_callback_query(call.id, "🔍")
-    try:
-        bot.edit_message_text(f"🔍 <b>{tn}</b> → {tr}", uid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("meduse_"))
-def cb_meduse(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, item = int(parts[1]), parts[2]
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        g = games[cid]
-        if uid not in g["players"] or not g["players"][uid]["alive"] or g["phase"] != "discussion":
-            return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        med = g["med_items"].get(uid)
-        if not med or med["item"] != item or med.get("used"):
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if item == "adrenaline":
-            return bot.answer_callback_query(call.id, "💉 يعمل تلقائياً عند الخطر", show_alert=True)
-        targets = get_alive_except(cid, uid)
-    if not targets:
-        return bot.answer_callback_query(call.id, "🚫", show_alert=True)
-    bot.answer_callback_query(call.id, "✅")
-    mk = types.InlineKeyboardMarkup(row_width=2)
-    prefix = "scalpel" if item == "scalpel" else "detect"
-    mk.add(*[types.InlineKeyboardButton(p["name"], callback_data=f"{prefix}_{cid}_{t}")
-             for t, p in targets.items()])
-    try:
-        bot.edit_message_text("🎯 <b>اختر الهدف</b>", uid, call.message.message_id, parse_mode="HTML", reply_markup=mk)
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("spy_"))
-def cb_spy(call):
-    uid = call.from_user.id
-    try:
-        parts = call.data.split("_")
-        cid, tid = int(parts[1]), int(parts[2])
-    except:
-        return
-    with bot_lock:
-        if cid not in games:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        g = games[cid]
-        if uid not in g["players"] or not g["players"][uid]["alive"]:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if not has_item(uid, "spy_glass"):
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if tid not in g["players"] or tid == uid:
-            return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        use_item(uid, "spy_glass")
-        team = get_original_team(g, tid)
-        tn = g["players"][tid]["name"]
-        team_label = {"evil": "🔴 ظلام", "good": "🟢 نور", "psycho": "🟡 مستقل", "neutral": "⚪ محايد"}.get(team, "?")
-    bot.answer_callback_query(call.id, "🔭")
-    try:
-        bot.edit_message_text(f"🔭 <b>{tn}</b> → {team_label}", uid, call.message.message_id, parse_mode="HTML")
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("buy_"))
-def cb_buy(call):
-    uid = call.from_user.id
-    item_id = call.data.replace("buy_", "")
-    ok, msg = buy_item(uid, item_id)
-    bot.answer_callback_query(call.id, msg.replace("<b>", "").replace("</b>", ""), show_alert=True)
-    if ok:
-        try:
-            item = SHOP_ITEMS[item_id]
-            bot.edit_message_text(f"✅ <b>تمّت الصفقة</b>\n\n{item['name']}\n<i>{item['desc']}</i>",
-                uid, call.message.message_id, parse_mode="HTML")
-        except:
-            pass
-
-
 # ══════════════ بدء المستشفى ══════════════
 def start_hospital(cid, expected_gid):
     with bot_lock:
@@ -3528,6 +2583,15 @@ def start_hospital(cid, expected_gid):
         g["phase"] = "roles_reveal"
         g["game_started_at"] = time.time()
         gid = g["game_id"]
+
+    # --- شرح سينمائي ---
+    safe_send(cid,
+        "📜 <b>بروتوكول النجاة</b>\n\n"
+        "1️⃣ <b>الليل:</b> يذهب كلٌ إلى غرفته. القتلة يتسللون، والأطباء يحركون، والمراقبون يراقبون.\n"
+        "2️⃣ <b>النهار:</b> تشرق الشمس لتكشف الضحايا. ناقشوا، ابحثوا عن الجرّاح، واستخدموا /suspect للشك.\n"
+        "3️⃣ <b>التصويت:</b> ضعوا المتهم في القفص. إما أن يحترق أو يُعفى عنه.\n\n"
+        "<i>البقاء للأذكى...</i>")
+    time.sleep(3)
 
     mk = types.InlineKeyboardMarkup()
     mk.add(types.InlineKeyboardButton("📂 افتح ملفك السري",
@@ -3618,6 +2682,16 @@ def start_vote_game(cid, expected_gid):
         g["game_started_at"] = time.time()
         g["asked_uids_done"] = set()
         gid = g["game_id"]
+
+    # --- شرح سينمائي ---
+    safe_send(cid,
+        "📜 <b>دستور الحلبة</b>\n\n"
+        "1️⃣ <b>الميكروفون:</b> كل جولة يختار لاعب سؤالاً (تصويت أو سؤال وجواب).\n"
+        "2️⃣ <b>التصويت:</b> اختاروا الشخص المناسب للسؤال.\n"
+        "3️⃣ <b>الجواب:</b> اكتبوا أجوبتكم بالسر في الخاص.\n"
+        "4️⃣ <b>النتائج:</b> نكشف الأوراق ونرى من يوافق من.\n\n"
+        "<i>الجمهور لا يرحم...</i>")
+    time.sleep(3)
 
     safe_send(cid, "🗳 <b>بدأت حلبة التصويت!</b>\n\n<i>كل لاعب يطرح سؤالاً بدوره…</i>")
     if not safe_sleep(cid, gid, 2):
@@ -3923,10 +2997,6 @@ def calc_titles(cid):
         for u in stats.get("scalpel_kills", set()):
             if u in pp:
                 titles.setdefault(u, []).append("betrayed")
-        for pair in g.get("ally_pairs", set()):
-            for u in pair:
-                if u in pp:
-                    titles.setdefault(u, []).append("allied")
     return titles
 
 
@@ -3979,15 +3049,7 @@ def show_results(cid, winner_msg):
             if "sherlock" in player_titles or "reaper" in player_titles:
                 reward += MVP_BONUS
                 xp_gain += 10
-            for pair in g.get("ally_pairs", set()):
-                if uid in pair:
-                    partner = [u for u in pair if u != uid]
-                    if partner:
-                        partner_alive = pp.get(partner[0], {}).get("alive", False)
-                        if p["alive"] and partner_alive:
-                            reward += ALLY_BONUS
-                            xp_gain += 5
-
+            
             add_coins(uid, reward)
             add_xp(uid, xp_gain)
             prof = get_profile(uid)
@@ -4189,45 +3251,7 @@ def pm_handler(msg):
 
     # همسة /x المعلقة
     x_key = None
-    with bot_lock:
-        for k, v in whisper_db.items():
-            if k.startswith("xw_") and v.get("type") == "x_whisper" and v["owner"] == uid and v["phase"] == "waiting_text":
-                x_key = k
-                break
-
-    if x_key:
-        with bot_lock:
-            wdata = whisper_db[x_key]
-            wdata["text"] = clean(text, 500)
-            wdata["phase"] = "done"
-            target_name = wdata["target_name"]
-            w_id = x_key
-        safe_pm(uid, "✅ <i>تم قبول همستك…</i>")
-        mk = types.InlineKeyboardMarkup()
-        mk.add(types.InlineKeyboardButton("🔓 افتح الهمسة", callback_data=f"xwopen_{w_id}"))
-        try:
-            bot.send_message(PUBLIC_GROUP_ID, f"💌 <b>همسة إلى {clean(target_name)}</b>\n\n<i>اضغط الزر لفتحها…</i>",
-                parse_mode="HTML", reply_markup=mk)
-        except:
-            safe_pm(uid, "⚠️ <i>تعذّر الإرسال للمجموعة</i>")
-        return
-
-    # همسة النقاش
-    wg_key = None
-    with bot_lock:
-        for k, v in whisper_db.items():
-            if k.startswith("wg_") and v["sender"] == uid and v["text"] is None:
-                wg_key = k
-                break
-
-    if wg_key:
-        with bot_lock:
-            wdata = whisper_db[wg_key]
-            wdata["text"] = clean(text, 200)
-            target_uid = wdata["target"]
-        safe_pm(uid, "✅ <i>همستك في الطريق…</i>")
-        safe_pm(target_uid, f"💌 <b>رسالة سرية من مجهول:</b>\n\n«{clean(text, 200)}»")
-        return
+    # لا توجد whisper_db هنا للهمسات العادية أو x_whisper
 
     with bot_lock:
         fc = find_game_for_user(uid)
@@ -4449,73 +3473,12 @@ def dispatch_evil_chat(uid, param):
     safe_pm(uid, "🌑 <i>قناة الظلام مفتوحة…</i>")
 
 
-# ══════════════ أمر /x ══════════════
-@bot.message_handler(commands=['x'], chat_types=['private'])
-def cmd_x(m):
-    uid = m.from_user.id
-    uname = (m.from_user.username or "").lower()
-    if uname != OWNER_USERNAME.lower():
-        return
-    global OWNER_CHAT_ID
-    OWNER_CHAT_ID = uid
-    parts = m.text.split(maxsplit=1)
-    if len(parts) < 2:
-        return safe_pm(uid, "🔮 <i>اكتب: /x @اسم</i>")
-    mention_text = parts[1].strip()
-    target_uid = None
-    target_name = mention_text
-    if m.entities:
-        for ent in m.entities:
-            if ent.type == "text_mention":
-                target_uid = ent.user.id
-                target_name = ent.user.first_name
-    whisper_key = f"xw_{uid}_{int(time.time())}"
-    with bot_lock:
-        whisper_db[whisper_key] = {
-            "type": "x_whisper", "owner": uid, "target_name": target_name,
-            "target_uid": target_uid, "target_mention": mention_text,
-            "text": None, "phase": "waiting_text",
-        }
-    safe_pm(uid, f"🔮 <b>همسة إلى {clean(target_name)}</b>\n\n<i>اكتب نص الهمسة الآن…</i>")
-
-
-# ══════════════ فتح همسة /x ══════════════
-@bot.callback_query_handler(func=lambda c: c.data.startswith("xwopen_"))
-def cb_xw_open(call):
-    uid = call.from_user.id
-    w_id = call.data.replace("xwopen_", "")
-    with bot_lock:
-        wdata = whisper_db.get(w_id)
-        if not wdata:
-            return bot.answer_callback_query(call.id, "❌ الهمسة لم تعد موجودة", show_alert=True)
-        target_name = wdata.get("target_name", "")
-        target_uid = wdata.get("target_uid")
-        whisper_text = wdata.get("text", "")
-        target_mention = wdata.get("target_mention", "")
-
-    uname = call.from_user.username or ""
-    is_target = False
-    if target_uid and uid == target_uid:
-        is_target = True
-    elif target_mention:
-        clean_mention = target_mention.lstrip("@").lower()
-        if uname.lower() == clean_mention:
-            is_target = True
-
-    if is_target:
-        bot.answer_callback_query(call.id, f"💌 {whisper_text}", show_alert=True)
-        if OWNER_CHAT_ID:
-            opener_name = clean_name(call.from_user.first_name)
-            safe_pm(OWNER_CHAT_ID, f"✅ <b>{opener_name}</b> فتح همستك إلى {clean(target_name)}")
-    else:
-        bot.answer_callback_query(call.id, "🔒 هذه الهمسة ليست لك…", show_alert=True)
-        if OWNER_CHAT_ID:
-            snooper_name = clean_name(call.from_user.first_name)
-            safe_pm(OWNER_CHAT_ID, f"👀 <b>{snooper_name}</b> حاول فتح همستك إلى {clean(target_name)}")
-
-
 # ══════════════ التشغيل ══════════════
 print("🏥 المستشفى الملعون يعمل…")
-print(f"🤖 @{BOT_USERNAME}")
+try:
+    print(f"🤖 @{BOT_USERNAME}")
+except:
+    pass
 print(f"🔑 المالك: @{OWNER_USERNAME}")
 bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+```
