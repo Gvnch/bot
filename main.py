@@ -36,13 +36,22 @@ Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
 # ⚠️ ضع التوكن الخاص بك هنا
-TOKEN = "8300157614:AAHbFnmXM8OQHrBLlnJJwKLTZC7fKbEntfE"
+TOKEN = "8300157614:AAF32Urh6eOdsXN0hjqGeRwEPm872gKyEkQ"
 
 OWNER_USERNAME = "O_SOHAIB_O"
 OWNER_CHAT_ID = None
 PUBLIC_GROUP_ID = -1002493822482
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True, num_threads=5)
+# إعدادات الاتصال المحسنة لمنع تضارب رندر
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True, num_threads=3)
+
+# ⚠️ خطوة مهمة جداً: حذف أي اتصال سابق لمنع Error 409
+try:
+    bot.remove_webhook()
+    time.sleep(1)
+except:
+    pass
+
 try:
     BOT_INFO = bot.get_me()
     BOT_ID = BOT_INFO.id
@@ -50,7 +59,6 @@ try:
     print(f"--- Logged in as: {BOT_USERNAME} ---")
 except Exception as e:
     print(f"Login Failed: {e}")
-    sys.exit(1)
 
 # ══════════════ الذاكرة ══════════════
 games = {}
@@ -95,8 +103,8 @@ LOSE_REWARD = 10
 MVP_BONUS = 25
 
 ROOM_NAMES = {
-    1: "🛏 الجناح (A)",
-    2: "🛏 الجناح (B)",
+    1: "🛏 الجناح A",
+    2: "🛏 الجناح B",
     3: "🔬 المختبر",
     4: "🏚 القبو",
     5: "🌑 الممر المظلم",
@@ -118,20 +126,6 @@ ROLE_DISPLAY = {
     "Swapper": "🛏 عابث الأسرّة", "Patient": "🤕 المريض",
     "Screamer": "😱 المرعوب", "Nurse": "💊 الممرّض",
     "Security": "👮 حارس الأمن",
-}
-
-ROLE_DESC = {
-    "Surgeon": "🔪 <b>الجرّاح</b>\nمشرطك هو الحكم. اختر ضحية كل ليلة.",
-    "Anesthetist": "💉 <b>المخدّر</b>\nجمّد قدرات لاعب لليلة كاملة. أنت خليفة الجرّاح.",
-    "Instigator": "🧠 <b>المحرّض</b>\nاسرق صوت لاعب في التصويت وازرع الفتنة.",
-    "Psychopath": "🤡 <b>المجنون</b>\nهدفهم طردك. إذا صوتوا ضدك، تنفجر القنبلة ويفوز الجنون.",
-    "Doctor": "🩺 <b>الطبيب</b>\nاحمِ لاعباً كل ليلة. لكن احذر، الخطأ وارد.",
-    "Observer": "👁 <b>المراقب</b>\nاكشف هوية لاعب واحد كل ليلة.",
-    "Swapper": "🛏 <b>عابث الأسرّة</b>\nبدّل أماكن لاعبين، فتصيب الضربة غير المقصود.",
-    "Patient": "🤕 <b>المريض</b>\nبلا قدرات، لكن يمكنك سرقة دور ميت مرة واحدة.",
-    "Screamer": "😱 <b>المرعوب</b>\nرادارك يعمل تلقائياً. ستعرف من زارك ليلاً.",
-    "Nurse": "💊 <b>الممرّض</b>\nلديك حقنة سم واحدة. استخدمها بحكمة.",
-    "Security": "👮 <b>حارس الأمن</b>\nلديك رصاصة واحدة. اقتل الشرير، لكن إن قتلت بريئاً ستُرمى في المحرقة فوراً.",
 }
 
 ROLE_TEAM = {
@@ -158,29 +152,7 @@ SILENT_PHASES = {
     "room_choosing",
 }
 
-# ══════════════ رسائل ونصوص ══════════════
-KILL_SCENES = [
-    [
-        "🌑 هدوء تام...",
-        "🚪 باب يُفتح ببطء...",
-        "🔪 ومضة سريعة...",
-        "💀 <b>{name}</b> لن يرى النور مجدداً.",
-    ],
-    [
-        "🌑 الظلام يخيّم...",
-        "👣 خطوات في الممر...",
-        "💀 <b>{name}</b> وُجد جثة هامدة.",
-    ],
-]
-
-SAVE_SCENES = [
-    [
-        "🌑 المشرط اقترب...",
-        "🩺 لكن يد الطبيب كانت أسرع!",
-        "✨ أحدهم نجا الليلة.",
-    ],
-]
-
+# ══════════════ المتجر والألقاب ══════════════
 TITLE_DEFS = {
     "chatterbox": {"icon": "🗣️", "name": "الثرثار", "desc": "أكثر واحد حكى"},
     "sherlock": {"icon": "🕵️", "name": "شارلوك", "desc": "صوّت على القاتل صح"},
@@ -601,7 +573,6 @@ def _check_win_inner(cid):
         g["winners_team"] = "good"
         return "🩺 <b>تم تطهير المستشفى... النور ينتصر.</b>"
 
-    # حالات خاصة
     has_surgeon = any(pp[u]["role"] == "Surgeon" for u in evil_alive)
     has_active_killer = has_surgeon or any(pp[u]["role"] == "Anesthetist" for u in evil_alive)
     
@@ -638,7 +609,6 @@ def show_results(cid, msg):
         g = games[cid]
         g["phase"] = "ended"
         
-        # Build list
         lines = []
         for u, p in g["players"].items():
             status = "حي" if p["alive"] else "ميت"
@@ -696,12 +666,12 @@ def build_lobby(cid):
 
     if gt == "hospital":
         mn = MIN_HOSPITAL
-        title = "🏥 المستشفى الملعون"
-        flavor = "فتحت المستشفى المهجور ابوابها اخيرا....\n ...احذر ممن يتربض بك"
+        title = "🏥 **المستشفى**"
+        flavor = "الممرات مظلمة... ثق بحدسك فقط."
     else:
         mn = MIN_VOTE
-        title = "⚖️ الحلبة"
-        flavor = "مالك دخل ، انقلع \n "
+        title = "⚖️ **مجلس التصويت**"
+        flavor = "من صاحب الحجة الأقوى؟"
 
     if n == 0:
         pt = "   <i>(لا أحد بعد)</i>"
@@ -727,7 +697,8 @@ def build_lobby(cid):
 
 def join_markup(gid, gtype="hospital"):
     m = types.InlineKeyboardMarkup()
-    btn_text = "🚪 حجز" if gtype == "hospital" else "🩸 دخول"
+    # تم تغيير النصوص لتناسب الجو العام
+    btn_text = "💀 توقيع الدخول" if gtype == "hospital" else "🗳️ تسجيل الحضور"
     m.add(types.InlineKeyboardButton(btn_text, callback_data=f"join_{gid}"))
     return m
 
@@ -748,7 +719,7 @@ def lobby_tick(cid, gid):
                 mk = join_markup(gid, gt)
             asset = ASSETS["LOBBY"] if gt == "hospital" else ASSETS["VOTE"]
             
-            # ⚠️ الإصلاح الجذري: محاولة إرسال ميديا، إذا فشل، إرسال نص
+            # محاولة إرسال ميديا أو نص
             nm = None
             try:
                 if gt == "hospital":
@@ -1069,21 +1040,20 @@ def show_suspect_bar(cid):
             lines.append(f"  {pp[t_uid]['name']}: {bar} ({count})")
     if lines: safe_send(cid, "📊 <b>مقياس الشك:</b>\n" + "\n".join(lines))
 
-# ══════════════ الأوامر ══════════════
 def do_commands(m):
     cid = m.chat.id
     cmd_text = (
         "📖 <b>أوامر المستشفى</b>\n\n"
         "<code>/hospital</code> - بدء المستشفى\n"
-        "<code>/vote</code> - بدء الحلبة\n"
+        "<code>/vote</code> - بدء مجلس التصويت\n"
         "<code>/force_start</code> - بدء فوري\n"
         "<code>/time</code> - تمديد الوقت\n"
         "<code>/cancel</code> - إلغاء اللعبة\n"
         "<code>/suspect</code> - توجيه اتهام\n"
-        "<code>/myrole</code> - معرفة دورك\n"
+        "<code>/myrole</code> - معرفة هويتك\n"
         "<code>/alive</code> - قائمة الأحياء\n"
-        "<code>/rules</code> - شرح القواعد\n"
-        "<code>/roles</code> - شرح الأدوار\n"
+        "<code>/rules</code> - القواعد\n"
+        "<code>/roles</code> - الأدوار\n"
         "<code>/profile</code> - ملفك الشخصي\n"
         "<code>/shop</code> - المتجر\n"
     )
@@ -1277,7 +1247,8 @@ def start_night(cid, expected_gid):
             games[cid]["pinned_mids"] = []
 
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🌑 المهام الليلية", url=f"https://t.me/{BOT_USERNAME}?start=night_{cid}"))
+    # تم تغيير نص الزر ليكون غامضاً
+    mk.add(types.InlineKeyboardButton("🌑 ابدأ المهمة", url=f"https://t.me/{BOT_USERNAME}?start=night_{cid}"))
     try:
         try:
             bot.send_photo(cid, ASSETS["NIGHT"], caption=f"🌑 <b>الليلة {rnd}</b>\n<i>معكم {NIGHT_TIME} ثانية</i>", parse_mode="HTML", reply_markup=mk)
@@ -1333,15 +1304,16 @@ def send_night_action(cid, uid, role):
         m.add(*[types.InlineKeyboardButton(p["name"], callback_data=f"act_{cid}_{t}_{prefix}") for t, p in tgts.items()])
         return m
 
+    # تم تحسين النصوص لتكون أقل ابتذالاً
     prompts = {
-        "Surgeon": "🔪 <b>من الضحية؟</b>",
-        "Doctor": "🩺 <b>من ستحمي؟</b>",
-        "Anesthetist": "💉 <b>من ستخدر؟</b>",
-        "Observer": "👁 <b>من ستكشف؟</b>",
-        "Instigator": "🧠 <b>من ستسرق صوته؟</b>",
-        "Swapper": "🛏 <b>الطرف الأول للتبديل؟</b>",
-        "Nurse": "💊 <b>من ستحقن؟</b>",
-        "Security": "👮 <b>من المشتبه به؟</b> (رصاصة واحدة)",
+        "Surgeon": "🔪 <b>اختر الهدف...</b>",
+        "Doctor": "🩺 <b>من يستحق النجاة؟</b>",
+        "Anesthetist": "💉 <b>إيقاف الهدف...</b>",
+        "Observer": "👁 <b>كشف الحقيقة...</b>",
+        "Instigator": "🧠 <b>سرقة الصوت...</b>",
+        "Swapper": "🛏 <b>تبديل المواقع (1)...</b>",
+        "Nurse": "💊 <b>الحقنة القاتلة...</b>",
+        "Security": "👮 <b>تحييد الخطر (رصاصة واحدة)...</b>",
     }
 
     if role == "Security":
@@ -1352,7 +1324,7 @@ def send_night_action(cid, uid, role):
         
         mk = room_btns("security")
         if not mk: return safe_pm(uid, "🚫 لا أهداف.")
-        safe_pm(uid, f"👮 <b>معك رصاصة واحدة. استخدمها بحكمة.</b>\n<i>يمكنك أيضاً استخدام /كشف_الكاميرات</i>", reply_markup=mk)
+        safe_pm(uid, f"👮 <b>لديك رصاصة واحدة. لا تتردد.</b>\n<i>يمكنك أيضاً استخدام /كشف_الكاميرات</i>", reply_markup=mk)
         return
 
     if role == "Patient":
@@ -1361,7 +1333,7 @@ def send_night_action(cid, uid, role):
             dead = [(u, p) for u, p in games[cid]["players"].items() if not p["alive"] and u != uid and p["role"] != "Patient"]
         mk = types.InlineKeyboardMarkup(row_width=2)
         mk.add(*[types.InlineKeyboardButton(f"💀 {p['name']} ({ROLE_DISPLAY.get(p['role'], '?')})", callback_data=f"act_{cid}_{u}_patient") for u, p in dead])
-        safe_pm(uid, "🤕 <b>اختر جثة لتقمص دورها:</b>", reply_markup=mk)
+        safe_pm(uid, "🤕 <b>تقمص دوراً جديداً:</b>", reply_markup=mk)
         return
 
     if role == "Swapper":
@@ -1379,7 +1351,7 @@ def send_night_action(cid, uid, role):
         ex = {"evil"} if role in ("Surgeon", "Anesthetist") else None
         mk = room_btns(key, exclude_teams=ex)
         
-    if not mk: safe_pm(uid, "🚫 لا يوجد أهداف في غرفتك.")
+    if not mk: safe_pm(uid, "🚫 لا يوجد أهداف في نطاقك.")
     else: safe_pm(uid, prompts[role], reply_markup=mk)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("act_"))
@@ -1398,10 +1370,10 @@ def cb_act(call):
 
         # رسالة سينمائية عامة فورية (بدون اسم)
         role_emoji_map = {
-            "surgeon": "🔪 شخص ما يجهز مشرطه...",
-            "doctor": "🩺 الطبيب يتحرك في الظلام...",
-            "anesthetist": "💉 تم تجهيز الإبرة...",
-            "nurse": "💊 الممرض يخلط السم...",
+            "surgeon": "🔪 حركة سريعة في الظلام...",
+            "doctor": "🩺 خطوات هادئة...",
+            "anesthetist": "💉 يتم تحضير الإبرة...",
+            "nurse": "💊 رائحة الدواء تفوح...",
         }
         if act in role_emoji_map:
             safe_send(cid, f"<i>{role_emoji_map[act]}</i>")
@@ -1453,12 +1425,12 @@ def cb_act(call):
         with bot_lock: tgts = get_alive_except(cid, uid)
         mk = types.InlineKeyboardMarkup(row_width=2)
         mk.add(*[types.InlineKeyboardButton(p["name"], callback_data=f"act_{cid}_{u}_swapper2") for u, p in tgts.items() if u != tid])
-        try: bot.edit_message_text("🛏 <b>الطرف الثاني؟</b>", uid, call.message.message_id, parse_mode="HTML", reply_markup=mk)
+        try: bot.edit_message_text("🛏 <b>تبديل المواقع (2)...</b>", uid, call.message.message_id, parse_mode="HTML", reply_markup=mk)
         except: pass
         return
 
-    bot.answer_callback_query(call.id, "✅ تم")
-    try: bot.edit_message_text("✅ <b>تم تسجيل قرارك.</b>", uid, call.message.message_id, parse_mode="HTML")
+    bot.answer_callback_query(call.id, "✅")
+    try: bot.edit_message_text("✅ <b>تم استلام الأمر.</b>", uid, call.message.message_id, parse_mode="HTML")
     except: pass
 
 # ══════════════ الجوكر ══════════════
@@ -1473,7 +1445,7 @@ def assign_joker(cid, gid):
         g["joker_used"] = False
     mk = types.InlineKeyboardMarkup()
     mk.add(types.InlineKeyboardButton("🃏 بطاقة الجوكر", url=f"https://t.me/{BOT_USERNAME}?start=joker_{cid}"))
-    safe_pm(holder, "🃏 <b>وجدت بطاقة الجوكر!</b>\nاستخدمها بحكمة لمرة واحدة.", reply_markup=mk)
+    safe_pm(holder, "🃏 <b>عثرت على بطاقة الجوكر!</b>\nاستخدمها بحكمة لمرة واحدة.", reply_markup=mk)
 
 def dispatch_joker(uid, param):
     try: cid = int(param.replace("joker_", ""))
@@ -1486,7 +1458,7 @@ def dispatch_joker(uid, param):
     mk = types.InlineKeyboardMarkup(row_width=1)
     for k, v in JOKER_OPTIONS.items():
         mk.add(types.InlineKeyboardButton(v["name"], callback_data=f"jkuse_{cid}_{k}"))
-    safe_pm(uid, "🃏 <b>اختر قدرة الجوكر:</b>\n⚠️ هويتك ستكشف للجميع.", reply_markup=mk)
+    safe_pm(uid, "🃏 <b>قدرة الجوكر:</b>\n⚠️ الاستخدام سيكشف هويتك.", reply_markup=mk)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("jkuse_"))
 def cb_joker_use(call):
@@ -1502,7 +1474,7 @@ def cb_joker_use(call):
         pn = g["players"][uid]["name"]
         pr = ROLE_DISPLAY.get(g["players"][uid]["role"], "?")
     
-    bot.answer_callback_query(call.id, "🃏 تم")
+    bot.answer_callback_query(call.id, "🃏")
     safe_send(cid, f"🃏 <b>الجوكر!</b>\n{pname(uid, pn)} استخدم <b>{JOKER_OPTIONS[jk]['name']}</b>\nهويته: {pr}")
 
     if jk == "cancel_vote" and g["phase"] == "voting":
@@ -1709,8 +1681,9 @@ def start_voting(cid, gid):
     
     silence_all(cid)
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("⚖️ التصويت", url=f"https://t.me/{BOT_USERNAME}?start=v_{cid}"))
-    msg = safe_send(cid, f"⚖️ <b>وقت التصويت ({VOTE_TIME}ث)</b>", reply_markup=mk)
+    # تغيير نص الزر ليكون ملائماً أكثر
+    mk.add(types.InlineKeyboardButton("⚖️ الحكم", url=f"https://t.me/{BOT_USERNAME}?start=v_{cid}"))
+    msg = safe_send(cid, f"⚖️ <b>وقت إصدار الحكم ({VOTE_TIME}ث)</b>", reply_markup=mk)
     if msg:
         safe_pin(cid, msg.message_id)
         with bot_lock: games[cid]["pinned_mids"].append(msg.message_id)
@@ -1767,8 +1740,8 @@ def start_defense(cid, gid, sus):
     
     silence_all(cid)
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🔥 حرق", callback_data=f"cf_{cid}_y"),
-           types.InlineKeyboardButton("🕊 عفو", callback_data=f"cf_{cid}_n"))
+    mk.add(types.InlineKeyboardButton("🔥 إدانة", callback_data=f"cf_{cid}_y"),
+           types.InlineKeyboardButton("🕊 براءة", callback_data=f"cf_{cid}_n"))
     safe_send(cid, "⚖️ <b>حكم الجمهور:</b>", reply_markup=mk)
     
     if not safe_sleep(cid, gid, CONFIRM_TIME): return
@@ -1787,7 +1760,7 @@ def resolve_confirm(cid, gid):
         with bot_lock: kill_player(g, sus)
         pn = g["players"][sus]["name"]
         pr = ROLE_DISPLAY.get(g["players"][sus]["role"], "?")
-        safe_send(cid, f"🔥 <b>{pn} احترق.</b>\n🎭 كان: {pr}")
+        safe_send(cid, f"🔥 <b>{pn} تمت إدانته.</b>\n🎭 كان: {pr}")
         with bot_lock: transfer_radio(g, sus) # نقل اللاسلكي لعشوائي
         
         # المجنون
@@ -1816,7 +1789,7 @@ def resolve_confirm(cid, gid):
 
         if check_win_safe(cid, gid): return
     else:
-        safe_send(cid, "🕊 <b>عفو عام.</b>")
+        safe_send(cid, "🕊 <b>حكم بالبراءة.</b>")
     
     start_room_choosing(cid, gid)
 
@@ -1837,7 +1810,7 @@ def cb_vote(call):
         if g["players"][uid]["role"] == "Instigator": g["votes"][f"i_{uid}"] = tid
         # الجوكر (تصويت مزدوج)
         if g.get("joker_holder") == uid and g.get("joker_effect") == "double_vote": g["votes"][f"d_{uid}"] = tid
-    bot.answer_callback_query(call.id, "✅ صوتك وصل")
+    bot.answer_callback_query(call.id, "✅ تم")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cf_"))
 def cb_confirm(call):
@@ -1857,8 +1830,8 @@ def cb_confirm(call):
         y, n = len(cv["yes"]), len(cv["no"])
         
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton(f"🔥 حرق ({y})", callback_data=f"cf_{cid}_y"),
-           types.InlineKeyboardButton(f"🕊 عفو ({n})", callback_data=f"cf_{cid}_n"))
+    mk.add(types.InlineKeyboardButton(f"🔥 إدانة ({y})", callback_data=f"cf_{cid}_y"),
+           types.InlineKeyboardButton(f"🕊 براءة ({n})", callback_data=f"cf_{cid}_n"))
     try: bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=mk)
     except: pass
     bot.answer_callback_query(call.id, "✅")
@@ -1903,7 +1876,7 @@ def pm_handler_special(msg):
         # بقية المنطق (قنبلة، وصية، إلخ)
         if g["players"][uid]["role"] == "Psychopath" and g.get("psycho_phase", {}).get(uid) == "q":
             g["bomb"]["q"] = clean(text, 100); g["psycho_phase"][uid] = "a"
-            safe_pm(uid, "✅ اللغز مسجل. الآن الجواب:"); return
+            safe_pm(uid, "✅ تم تسجيل اللغز. الآن الجواب:"); return
         if g["players"][uid]["role"] == "Psychopath" and g.get("psycho_phase", {}).get(uid) == "a":
             g["bomb"]["a"] = normalize_arabic(text); g["bomb"]["raw"] = clean(text, 50); g["bomb"]["is_set"] = True; g["bomb"]["owner"] = uid; g["psycho_phase"][uid] = "done"
             safe_pm(uid, "💣 القنبلة جاهزة."); return
@@ -1984,10 +1957,11 @@ def start_hospital(cid, expected_gid):
         g["game_started_at"] = time.time()
         gid = g["game_id"]
 
-    safe_send(cid, "🏥 <b>بدأ الكابوس!</b>\nافحص ملفك السري في الخاص.")
+    safe_send(cid, "🏥 <b>تم توزيع الأدوار...</b>\nالغموض يلف المكان.")
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("📂 ملفك", url=f"https://t.me/{BOT_USERNAME}?start=role_{cid}"))
-    safe_send(cid, "اضغط هنا لمعرفة دورك 👇", reply_markup=mk)
+    # تم تغيير نص الزر
+    mk.add(types.InlineKeyboardButton("📂 بطاقة الهوية", url=f"https://t.me/{BOT_USERNAME}?start=role_{cid}"))
+    safe_send(cid, "تحقق من هويتك 👇", reply_markup=mk)
     
     if not safe_sleep(cid, gid, 10): return
     
@@ -2009,7 +1983,7 @@ def start_vote_game(cid, expected_gid):
         g["asked_uids_done"] = set()
         gid = g["game_id"]
 
-    safe_send(cid, "🗳 <b>بدأت الحلبة!</b>")
+    safe_send(cid, "🗳 <b>افتُتحت الجلسة!</b>")
     if not safe_sleep(cid, gid, 2): return
     run_vote_round(cid, gid)
 
@@ -2029,7 +2003,8 @@ def run_vote_round(cid, gid):
         
         silence_all(cid)
         mk = types.InlineKeyboardMarkup()
-        mk.add(types.InlineKeyboardButton("🎤 السؤال", url=f"https://t.me/{BOT_USERNAME}?start=ask_{cid}"))
+        # تم تعديل الزر ليكون أقل رعباً
+        mk.add(types.InlineKeyboardButton("🎤 المنصة", url=f"https://t.me/{BOT_USERNAME}?start=ask_{cid}"))
         safe_send(cid, f"🎤 <b>الجولة {rnd}</b>: {g['players'][asker]['name']}", reply_markup=mk)
         
         # انتظار السؤال
@@ -2085,11 +2060,12 @@ def _show_qa_round(cid, rnd, gid):
     safe_send(cid, txt)
 
 def show_vote_game_end(cid, gid):
-    safe_send(cid, "🏁 <b>انتهت اللعبة!</b>")
+    safe_send(cid, "🏁 <b>رُفعت الجلسة!</b>")
     force_cleanup(cid)
 
 @bot.message_handler(commands=['start'], chat_types=['private'])
 def start_pm(m):
+    # This minimal handler ensures deep-linking works even if not added explicitly before
     try:
         args = m.text.split()
         if len(args) > 1:
@@ -2104,12 +2080,13 @@ def start_pm(m):
                     safe_pm(m.from_user.id, f"🎭 دورك: <b>{ROLE_DISPLAY.get(role, role)}</b>")
             return
     except: pass
-    safe_pm(m.from_user.id, "🤖 أهلاً بك في بوت المستشفى.")
+    safe_pm(m.from_user.id, "🤖 أهلاً بك.")
 
 # ══════════════ التشغيل ══════════════
 print("Bot Started...")
 while True:
     try:
+        # إعدادات خاصة لمنع انقطاع الاتصال بسهولة
         bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60, allowed_updates=["message", "callback_query", "chat_member"])
     except Exception as e:
         print(f"Polling Crash: {e}")
