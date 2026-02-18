@@ -34,7 +34,7 @@ Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
 # ⚠️ ضع التوكن الخاص بك هنا
-TOKEN = os.environ.get("BOT_TOKEN", "8300157614:AAHL0CKYHxl4dxzgt-rIU5bicsVeB6ndIT0")
+TOKEN = "8300157614:AAHdrFTKPLjfwC76mzs-MwYpXc8P3FVu-ZE"
 
 OWNER_USERNAME = "O_SOHAIB_O"
 OWNER_CHAT_ID = None
