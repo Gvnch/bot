@@ -36,7 +36,7 @@ Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
 # ⚠️ ضع التوكن الخاص بك هنا
-TOKEN = "8300157614:AAFE7hhuCZ9qdn1FSPe-xOOhWilfgXJd3NE"
+TOKEN = "8300157614:AAF7re_2clPSOC0hl8wLg1RpqyKHpCP5q-Y"
 
 OWNER_USERNAME = "O_SOHAIB_O"
 OWNER_CHAT_ID = None
@@ -45,7 +45,7 @@ PUBLIC_GROUP_ID = -1002493822482
 # إعدادات الاتصال المحسنة لمنع تضارب رندر
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True, num_threads=3)
 
-# ⚠️ حذف الويب هوك لمنع تضارب النسخ (Error 409)
+# ⚠️ خطوة مهمة جداً: حذف أي اتصال سابق لمنع Error 409
 try:
     bot.remove_webhook()
     time.sleep(1)
@@ -63,10 +63,8 @@ except Exception as e:
 # ══════════════ الذاكرة ══════════════
 games = {}
 user_to_game = {}
-
-# ⚠️ التعديل الجذري: استخدام RLock بدلاً من Lock لمنع التجميد (Deadlock)
+# استخدام RLock لمنع التجميد (Deadlock)
 bot_lock = threading.RLock()
-
 wallets_db = {}
 profiles_db = {}
 hall_of_fame = {
@@ -86,7 +84,7 @@ LAST_GASP_TIME = 15
 DISCUSS_TIME = 60
 VOTE_TIME = 30
 CONFIRM_TIME = 15
-DEFENSE_TIME = 20
+DEFENSE_TIME = 30 # زدنا الوقت قليلاً للنقاش الجماعي
 WILL_TIME = 30
 BOMB_TIME = 20
 ROOM_CHOOSE_TIME = 25
@@ -151,7 +149,7 @@ ROLE_ACTION_MAP = {
 SILENT_PHASES = {
     "night", "morning", "roles_reveal", "resolving",
     "waiting_q", "answering", "will_wait", "last_gasp_wait",
-    "confirming", "defense", "qa_results", "ended",
+    "confirming", "qa_results", "ended",
     "room_choosing",
 }
 
@@ -380,7 +378,7 @@ def open_discussion(cid):
 _cleanup_lock = threading.Lock()
 
 def force_cleanup(cid):
-    # مع RLock، يمكننا الدخول هنا حتى لو كنا نمسك القفل في دالة أخرى
+    # استخدام RLock يمنع التجميد هنا
     with _cleanup_lock:
         with bot_lock:
             if cid in games:
@@ -491,7 +489,7 @@ def transfer_radio(g, dead_uid, killer_uid=None):
                 new_holder = random.choice(alive)
         if new_holder:
             g["radio_holders"].add(new_holder)
-            safe_pm(new_holder, "📻 <b>لقد عثرت على لاسلكي!</b>\n\nتحدث عبره للشرير باستخدام:\n<code>/لاسلكي الرسالة</code>")
+            safe_pm(new_holder, "📻 <b>لقد عثرت على لاسلكي!</b>\n\nتحدث عبره باستخدام:\n<code>/لاسلكي الرسالة</code>")
 
 # ══════════════ بيانات اللعبة ══════════════
 def new_game_data(gtype, host_id, gid):
@@ -671,7 +669,7 @@ def build_lobby(cid):
 
     if gt == "hospital":
         mn = MIN_HOSPITAL
-        title = "🏥 المستشفى المهجور"
+        title = "🏥 المستشفى الملعون"
         flavor = "الممرات مظلمة... ثق بحدسك فقط."
     else:
         mn = MIN_VOTE
@@ -732,6 +730,7 @@ def lobby_tick(cid, gid):
                     nm = bot.send_photo(cid, asset, caption=txt, parse_mode="HTML", reply_markup=mk)
             except Exception as e:
                 print(f"Media Failed: {e}")
+                # Fallback to Text
                 nm = safe_send(cid, txt, reply_markup=mk)
 
             if nm:
@@ -822,8 +821,8 @@ def group_msg_filter(m):
             return
 
         if phase == "defense":
-            dt = g.get("defense_target")
-            if uid == dt and g["players"].get(uid, {}).get("alive", False):
+            # ⚠️ السماح للجميع بالكلام في مرحلة الدفاع وليس المتهم فقط
+            if is_participant(cid, uid) and g["players"][uid]["alive"]:
                 g["stats"]["msg_count"][uid] = g["stats"]["msg_count"].get(uid, 0) + 1
                 return
             else: do_delete = True
@@ -917,15 +916,18 @@ def init_game(msg, gtype):
 
     txt = build_lobby(cid)
     mk = join_markup(gid, gtype)
+    asset = ASSETS["LOBBY"] if gtype == "hospital" else ASSETS["VOTE"]
     
+    # محاولة الإرسال (ميديا أو نص)
     m2 = None
     try:
         if gtype == "hospital":
-            m2 = bot.send_animation(cid, ASSETS["LOBBY"], caption=txt, parse_mode="HTML", reply_markup=mk)
+            m2 = bot.send_animation(cid, asset, caption=txt, parse_mode="HTML", reply_markup=mk)
         else:
-            m2 = bot.send_photo(cid, ASSETS["VOTE"], caption=txt, parse_mode="HTML", reply_markup=mk)
+            m2 = bot.send_photo(cid, asset, caption=txt, parse_mode="HTML", reply_markup=mk)
     except Exception as e:
         print(f"Lobby Media Failed: {e}")
+        # Fallback
         m2 = safe_send(cid, txt, reply_markup=mk)
     
     if m2:
@@ -1052,6 +1054,9 @@ def do_commands(m):
         "<code>/suspect</code> - توجيه اتهام\n"
         "<code>/myrole</code> - معرفة هويتك\n"
         "<code>/alive</code> - قائمة الأحياء\n"
+        "<code>/rules</code> - القواعد\n"
+        "<code>/roles</code> - الأدوار\n"
+        "<code>/profile</code> - ملفك الشخصي\n"
         "<code>/shop</code> - المتجر\n"
     )
     safe_send(cid, cmd_text)
@@ -1228,7 +1233,7 @@ def start_night(cid, expected_gid):
         g["last_gasp_text"] = {}
         g["round_msg_count"] = {}
         g["suspect_votes"] = {}
-        g["security_checked_cam"] = set()
+        g["security_checked_cam"] = set() # تصفير فحص الكاميرا
         g["last_activity"] = time.time()
         rnd = g["round"]
         gid = g["game_id"]
@@ -1362,6 +1367,7 @@ def cb_act(call):
         if uid not in pp or not pp[uid]["alive"]: return bot.answer_callback_query(call.id, "❌", show_alert=True)
         if uid in g.get("night_acted", set()) and act != "swapper2": return bot.answer_callback_query(call.id, "✅", show_alert=True)
 
+        # رسالة سينمائية عامة فورية (بدون اسم)
         role_emoji_map = {
             "surgeon": "🔪 حركة سريعة في الظلام...",
             "doctor": "🩺 خطوات هادئة...",
@@ -1412,6 +1418,7 @@ def cb_act(call):
 
         if act != "swapper":
             g["night_acted"].add(uid)
+            g["round_night_acted"].add(uid)
 
     if send_swapper2:
         with bot_lock: tgts = get_alive_except(cid, uid)
@@ -1488,6 +1495,7 @@ def resolve_night(cid, expected_rnd, expected_gid):
         actions = g["actions"]
         sedated = g["sedated_current"]
         
+        # التبديل
         swaps = {}
         for uid, d in g["swap_data"].items():
             if uid not in sedated and "second" in d:
@@ -1496,18 +1504,21 @@ def resolve_night(cid, expected_rnd, expected_gid):
                     swaps[a] = b; swaps[b] = a
         def sw(t): return swaps.get(t, t) if t else t
 
+        # الجراح
         s_uid = g["stats"].get("surgeon_uid")
         s_tgt = None
         if s_uid and pp[s_uid]["alive"] and s_uid not in sedated:
             raw_tgt = actions.get("surgeon")
             if raw_tgt: s_tgt = sw(raw_tgt)
 
+        # الحارس
         sec_tgt = None
         sec_uid = next((u for u, p in pp.items() if p["role"]=="Security" and p["alive"]), None)
         if sec_uid and sec_uid not in sedated:
             raw_sec = actions.get("security")
             if raw_sec: sec_tgt = sw(raw_sec)
 
+        # الطبيب
         d_uid = next((u for u, p in pp.items() if p["role"]=="Doctor" and p["alive"]), None)
         d_tgt = None
         d_failed = False
@@ -1517,33 +1528,44 @@ def resolve_night(cid, expected_rnd, expected_gid):
                 d_tgt = sw(raw_d)
                 if random.random() < DOCTOR_FAIL_CHANCE: d_failed = True
 
+        # الحساب
         victim = None
         saved = False
         
+        # الجراح يضرب
         if s_tgt and s_tgt in pp and pp[s_tgt]["alive"]:
             if d_tgt == s_tgt and not d_failed: saved = True
+            elif has_item(s_tgt, "shield"):
+                use_item(s_tgt, "shield")
+                saved = True
             else: victim = s_tgt
 
+        # الحارس يضرب
         sec_victim = None
         sec_died_guilt = False
         if sec_tgt and sec_tgt in pp and pp[sec_tgt]["alive"]:
-            if sec_tgt != victim:
-                if d_tgt == sec_tgt and not d_failed: saved = True
+            if sec_tgt != victim: # إذا لم يقتله الجراح أصلاً
+                if d_tgt == sec_tgt and not d_failed: saved = True # الطبيب يحمي من الحارس أيضاً
                 else:
                     sec_victim = sec_tgt
+                    # هل قتل بريئاً؟
                     if get_original_team(g, sec_victim) == "good":
                         sec_died_guilt = True
 
+        # نتائج الممرض
         nurse_kills = []
         for n, t in g["nurse_poison"].items():
             if n not in sedated and pp[n]["alive"]:
                 t_real = sw(t)
                 if t_real in pp and pp[t_real]["alive"]:
+                    # موت الممرض إذا كان الهدف بريئاً
                     nk_innocent = False
                     if get_original_team(g, t_real) not in ("evil", "psycho"):
                         nk_innocent = True
+                    
                     nurse_kills.append({"victim": t_real, "killer": n, "suicide": nk_innocent})
 
+    # العرض
     try: bot.send_photo(cid, ASSETS["DAY"], caption="🌅 <b>الفجر...</b>", parse_mode="HTML")
     except: safe_send(cid, "🌅 <b>طلع الفجر...</b>")
     
@@ -1560,7 +1582,8 @@ def resolve_night(cid, expected_rnd, expected_gid):
     if victim:
         with bot_lock: kill_player(g, victim)
         safe_send(cid, f"🔪💀 <b>{pname(victim, pp[victim]['name'])}</b> وُجد مقتولاً.\n🎭 {ROLE_DISPLAY.get(pp[victim]['role'], '?')}")
-        with bot_lock: transfer_radio(g, victim, s_uid)
+        with bot_lock: transfer_radio(g, victim, s_uid) # الجراح يأخذه إذا قتله
+        # الكلمات الأخيرة
         with bot_lock: g["last_gasp_pending"][victim] = True
         safe_pm(victim, "🩸 لديك 15 ثانية لكتابة كلمات أخيرة.")
         safe_sleep(cid, expected_gid, LAST_GASP_TIME)
@@ -1581,7 +1604,7 @@ def resolve_night(cid, expected_rnd, expected_gid):
     for nk in nurse_kills:
         vic = nk["victim"]
         nur = nk["killer"]
-        if pp[vic]["alive"]:
+        if pp[vic]["alive"]: # Check again just in case
             with bot_lock: kill_player(g, vic)
             safe_send(cid, f"💊💀 <b>{pname(vic, pp[vic]['name'])}</b> مات مسموماً.\n🎭 ||{ROLE_DISPLAY.get(pp[vic]['role'], '?')}||")
             with bot_lock: transfer_radio(g, vic, nur)
@@ -1594,22 +1617,31 @@ def resolve_night(cid, expected_rnd, expected_gid):
 
     if check_win_safe(cid, expected_gid): return
     
+    # رسائل الكشف (المراقب/المرعوب)
     for u, t in g["observer_targets"].items():
         if u not in sedated and pp.get(u, {}).get("alive"):
             t_real = sw(t)
             if t_real in pp:
                 role_name = ROLE_DISPLAY.get(pp[t_real]['role'], '?')
                 safe_pm(u, f"👁 {pp[t_real]['name']} هو {role_name}")
-                with bot_lock: g["observer_last_reveal"] = role_name
+                with bot_lock: g["observer_last_reveal"] = role_name # للحارس
             
     for u, vs in g["screamer_visitors"].items():
         u_real = sw(u)
         if u_real in pp and pp[u_real]["role"] == "Screamer" and pp[u_real]["alive"] and u_real not in sedated:
             for v in vs: safe_pm(u_real, f"😱 شعرت بوجود {pp[v]['name']}")
 
+    # AFK
+    afk_kills, _ = check_afk(cid)
+    for ak in afk_kills:
+        safe_send(cid, f"💔 <b>{pp[ak]['name']}</b> مات من الخمول.")
+        with bot_lock: transfer_radio(g, ak)
+
     if check_win_safe(cid, expected_gid): return
     
     _try_promote_anesthetist(cid, expected_gid)
+    do_medical_drop(cid, expected_gid)
+    
     start_discussion(cid, expected_gid)
 
 def _try_promote_anesthetist(cid, gid):
@@ -1695,8 +1727,10 @@ def start_defense(cid, gid, sus):
         g["phase"] = "defense"
         g["defense_target"] = sus
     
-    unmute_player(cid, sus)
-    safe_send(cid, f"🎤 <b>{g['players'][sus]['name']}</b>، دافع عن نفسك ({DEFENSE_TIME}ث).")
+    # ⚠️ تعديل: السماح للجميع بالكلام وليس المتهم فقط
+    open_discussion(cid)
+    safe_send(cid, f"🎤 <b>{g['players'][sus]['name']}</b>، الدفاع مفتوح للجميع! ({DEFENSE_TIME}ث).")
+    
     if not safe_sleep(cid, gid, DEFENSE_TIME): return
     
     with bot_lock:
