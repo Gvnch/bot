@@ -8,16 +8,13 @@ import random
 import html
 import re
 import unicodedata
-import json
-import os
-import sys
 
 # ══════════════ سيرفر Render (لإبقاء البوت نشطاً) ══════════════
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running")
+        self.wfile.write(b"Bot is running - The Hospital & Council are Open")
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -35,13 +32,10 @@ def run_server():
 Thread(target=run_server, daemon=True).start()
 
 # ══════════════ إعدادات البوت ══════════════
-# ⚠️ ضع التوكن الخاص بك هنا
+# ⚠️ توكن البوت الخاص بك
 TOKEN = "8300157614:AAEob3NY0woxB4zhChSy1GCUj1eDZUNyYTQ"
 
 OWNER_USERNAME = "O_SOHAIB_O"
-OWNER_CHAT_ID = None
-PUBLIC_GROUP_ID = -1002493822482
-
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True, num_threads=3)
 
 try:
@@ -52,59 +46,47 @@ except:
 
 try:
     BOT_INFO = bot.get_me()
-    BOT_ID = BOT_INFO.id
     BOT_USERNAME = BOT_INFO.username
     print(f"--- Logged in as: {BOT_USERNAME} ---")
 except Exception as e:
     print(f"Login Failed: {e}")
 
-# ══════════════ الذاكرة ══════════════
+# ══════════════ الذاكرة المركزية ══════════════
 games = {}
 user_to_game = {}
 bot_lock = threading.RLock()
 wallets_db = {}
 profiles_db = {}
-hall_of_fame = {
-    "wins": {}, "surgeon_kills": {}, "doc_saves": {},
-    "observer_reveals": {}, "bombs": {}, "deaths": {},
-    "messages": {},
-}
 
-# ══════════════ ثوابت ══════════════
-MAX_GAMES = 100
+# ══════════════ ثوابت التوقيت واللعب ══════════════
 MAX_PLAYERS = 15
 DEFAULT_WAIT_TIME = 60
 INACTIVITY_TIMEOUT = 300
 
-NIGHT_TIME = 40
-LAST_GASP_TIME = 45 
-DISCUSS_TIME = 40
-VOTE_TIME = 25
-CONFIRM_TIME = 20
-DEFENSE_TIME = 40
-WILL_TIME = 30
+NIGHT_TIME = 45
+LAST_GASP_TIME = 30 
+DISCUSS_TIME = 45
+VOTE_TIME = 30
+CONFIRM_TIME = 25
+DEFENSE_TIME = 35
 BOMB_TIME = 25
 ROOM_CHOOSE_TIME = 30
 
+# ثوابت لعبة التصويت /vote
 VOTE_GAME_ASK_TIME = 45
-VOTE_GAME_VOTE_TIME = 25
-VOTE_GAME_ANSWER_TIME = 30
-VOTE_GAME_DISCUSS_TIME = 20
+VOTE_GAME_VOTE_TIME = 30
+VOTE_GAME_ANSWER_TIME = 40
 
-AFK_KILL_THRESHOLD = 2
-AFK_WARNING_THRESHOLD = 1
-MEDICAL_DROP_CHANCE = 0.3
 DOCTOR_FAIL_CHANCE = 0.1
 
 ROOM_NAMES = {
-    1: "🛏 الجناح A",
-    2: "🛏 الجناح B",
-    3: "🔬 المختبر",
-    4: "🏚 القبو",
-    5: "🌑 الممر المظلم",
+    1: "🛏 الجناح A (عنبر هادئ)",
+    2: "🛏 الجناح B (عنبر مزدحم)",
+    3: "🔬 المختبر (رائحة كيميائية)",
+    4: "🏚 القبو (مظلم وبارد)",
+    5: "🌑 الممر الرئيسي (مكشوف للجميع)",
 }
 
-# ══════════════ الأصول (Assets) ══════════════
 ASSETS = {
     "NIGHT": "AgACAgQAAxkBAAOAaYVV970SelJjAdfgC2lejaG2UXIAAjcMaxtYrDFQipw_Ve7HzpEBAAMCAAN4AAM4BA",
     "DAY": "AgACAgQAAxkBAAOVaYW5klHrisedX42r1ZlR5rHoBawAAp4Maxt3RDBQDWc7kkg-my0BAAMCAAN5AAM4BA",
@@ -112,7 +94,7 @@ ASSETS = {
     "VOTE": "AgACAgQAAxkBAANYaYUTJSrHhkDUESz7dLuUONpJWUsAAqoNaxuKXihQitHU1Aa5h9gBAAMCAAN5AAM4BA",
 }
 
-# ══════════════ الأدوار والشروحات المصغرة ══════════════
+# ══════════════ الأدوار والتوجيهات الاحترافية ══════════════
 ROLE_DISPLAY = {
     "Surgeon": "🔪 الجرّاح", "Anesthetist": "💉 المخدّر",
     "Instigator": "🧠 المحرّض", "Psychopath": "🤡 المجنون",
@@ -122,340 +104,183 @@ ROLE_DISPLAY = {
     "Security": "👮 حارس الأمن",
 }
 
-# شرح مصغر يظهر عند استلام الدور فقط
 ROLE_GUIDE_SHORT = {
-    "Surgeon": "🔪 <b>أنت الجرّاح (الأشرار).</b>\nهدفك تصفية الأبرياء. ستتحرك كل ليلة لاختيار ضحيتك.",
-    "Anesthetist": "💉 <b>أنت المخدّر (الأشرار).</b>\nمهمتك شل قدرات الأطباء ليلاً. ستتفعل قدرتك في الليلة الثانية.",
-    "Instigator": "🧠 <b>أنت المحرّض (محايد).</b>\nتستطيع سرقة صوت أحدهم في التصويت. ستتفعل قدرتك في الليلة الثانية.",
-    "Psychopath": "🤡 <b>أنت المجنون (فريق مستقل).</b>\nهدفك إقناعهم بإعدامك. قم بتجهيز قنبلتك الليلة!",
-    "Doctor": "🩺 <b>أنت الطبيب (الأخيار).</b>\nمهمتك حماية الأرواح. اختر شخصاً لإنقاذه كل ليلة.",
-    "Observer": "👁 <b>أنت المراقب (الأخيار).</b>\nتستطيع كشف هويات الآخرين. ستتفعل قدرتك في الليلة الثانية.",
-    "Swapper": "🛏 <b>أنت عابث الأسرّة (الأخيار).</b>\nقم بتبديل مواقع اللاعبين لإرباك القتلة. ستتفعل قدرتك في الليلة الثانية.",
-    "Patient": "🤕 <b>أنت المريض (الأخيار).</b>\nترقب جثث الموتى لتسرق هوياتهم وتكمل مسيرتهم.",
-    "Screamer": "😱 <b>أنت المرعوب (الأخيار).</b>\nلا تحتاج لفعل شيء. إذا زارك أحد ليلاً (غير الجراح) ستصرخ باسمه تلقائياً ليسمعه الجميع!",
-    "Nurse": "💊 <b>أنت الممرّض (الأخيار).</b>\nتملك حقنة سم واحدة لقتل الشرير. ستتفعل قدرتك في الليلة الثانية.",
-    "Security": "👮 <b>أنت حارس الأمن (الأخيار).</b>\nلديك رصاصة واحدة لتحقيق العدالة. ستتفعل قدرتك في الليلة الثانية."
+    "Surgeon": "🔪 <b>هويتك: الجرّاح (قائد الأشرار)</b>\n\nأنت سبب هذا الكابوس. هدفك هو تصفية كل من يقف في طريقك حتى تسيطر على المستشفى.\n\n▪️ <b>مهمتك:</b> كل ليلة، ستخرج في الظلام لاختيار ضحية جديدة لتمزيقها بمشرطك.",
+    "Anesthetist": "💉 <b>هويتك: المخدّر (فريق الأشرار)</b>\n\nأنت الذراع اليمنى للجراح. حقنك تشل الحركة وتمنع الأخيار من استخدام قدراتهم.\n\n▪️ <b>مهمتك:</b> ابتداءً من الليلة الثانية، يمكنك تخدير شخص ما ليلاً لمنعه من التحرك تماماً.",
+    "Instigator": "🧠 <b>هويتك: المحرّض (مستقل/خبيث)</b>\n\nأنت تتلاعب بعقول الجميع لتغيير مسار العدالة.\n\n▪️ <b>مهمتك:</b> يمكنك سلب صوت أحدهم ليلاً ليصبح التصويت لصالحك في الصباح.",
+    "Psychopath": "🤡 <b>هويتك: المجنون (منفرد)</b>\n\nأنت لا تكترث لمن يعيش ومن يموت، أنت فقط تريد رؤية العالم يحترق!\n\n▪️ <b>مهمتك:</b> ازرع قنبلتك الليلة. غداً، يجب أن تتلاعب بالجميع ليقوموا بالتصويت على إعدامك. إذا أعدموك... ستنفجر القنبلة وتفوز أنت وحدك!",
+    "Doctor": "🩺 <b>هويتك: الطبيب (الأخيار)</b>\n\nأنت بصيص الأمل الأخير في هذا المكان الملعون.\n\n▪️ <b>مهمتك:</b> كل ليلة، اختر مريضاً لإنقاذه. إذا حاول الجراح قتله، ستعترض طريقه وتنقذ حياته.",
+    "Observer": "👁 <b>هويتك: المراقب (الأخيار)</b>\n\nعيناك لا تخطئان أبداً. أنت تراقب الجميع من خلف الكاميرات.\n\n▪️ <b>مهمتك:</b> ابتداءً من الليلة الثانية، يمكنك كشف الهوية الحقيقية لأحد اللاعبين السريين.",
+    "Swapper": "🛏 <b>هويتك: عابث الأسرّة (الأخيار)</b>\n\nأنت تتسلل ليلاً لتبديل أسرّة المرضى لإرباك القتلة.\n\n▪️ <b>مهمتك:</b> ابتداءً من الليلة الثانية، اختر شخصين وبدّل مكانيهما لحماية الأبرياء من الموت.",
+    "Patient": "🤕 <b>هويتك: المريض (الأخيار)</b>\n\nأنت ضعيف الآن، لكن الموت يمنحك الفرصة.\n\n▪️ <b>مهمتك:</b> راقب الجثث. عندما يموت أحدهم، يمكنك التسلل لسرقة هويته وإكمال مسيرته وقدراته.",
+    "Screamer": "😱 <b>هويتك: المرعوب (الأخيار)</b>\n\nأعصابك منهارة تماماً. تملك سكيناً حاداً لحماية نفسك لمرة واحدة فقط.\n\n▪️ <b>مهمتك:</b> يمكنك الاختباء والارتجاف (وإذا زارك أحد ستصرخ باسمه). أو يمكنك استخدام سكينك لقتل أي شخص يزورك الليلة بدافع الخوف الأعمى!",
+    "Nurse": "💊 <b>هويتك: الممرّض (الأخيار)</b>\n\nتحمل في جيبك حقنة سم قاتلة... لمرة واحدة فقط.\n\n▪️ <b>مهمتك:</b> ابتداءً من الليلة الثانية، يمكنك إنهاء حياة شخص تشك بأنه الجراح. لكن احذر! إذا قتلت بريئاً، ستشرب السم وتنتحر ندماً.",
+    "Security": "👮 <b>هويتك: حارس الأمن (الأخيار)</b>\n\nمسدسك محشو برصاصتين لتحقيق العدالة.\n\n▪️ <b>مهمتك:</b> يمكنك إطلاق النار ليلاً. لكن احذر! إذا قتلت أبرياء للمرة الثانية، سيغضب باقي المرضى ويرمونك حياً في المحرقة في الصباح!"
 }
 
 ROLE_TEAM = {
-    "Surgeon": "evil", "Anesthetist": "evil",
-    "Instigator": "neutral",
+    "Surgeon": "evil", "Anesthetist": "evil", "Instigator": "neutral",
     "Doctor": "good", "Observer": "good", "Swapper": "good",
-    "Patient": "good", "Psychopath": "psycho",
-    "Screamer": "good", "Nurse": "good",
-    "Security": "good",
+    "Patient": "good", "Psychopath": "psycho", "Screamer": "good", 
+    "Nurse": "good", "Security": "good",
 }
 
-# فقط الجراح والطبيب والمجنون يتم تفعيل إشعارهم الليلة الأولى فوراً
-INSTANT_ROLES = {"Surgeon", "Doctor", "Psychopath"}
-
-ROLE_ACTION_MAP = {
-    "Surgeon": "surgeon", "Doctor": "doctor", "Anesthetist": "anesthetist",
-    "Observer": "observer", "Instigator": "instigator", "Swapper": "swapper",
-    "Nurse": "nurse", "Patient": "patient", "Security": "security"
-}
-
-SILENT_PHASES = {
-    "night", "morning", "roles_reveal", "resolving",
-    "waiting_q", "answering", "will_wait", "last_gasp_wait",
-    "confirming", "qa_results", "ended",
-    "room_choosing",
-}
-
-TITLE_DEFS = {
-    "chatterbox": {"icon": "🗣️", "name": "الثرثار", "desc": "أكثر واحد حكى"},
-    "sherlock": {"icon": "🕵️", "name": "شارلوك", "desc": "صوّت على القاتل صح"},
-    "silent": {"icon": "🤐", "name": "الصامت", "desc": "أقل واحد حكى"},
-    "angel": {"icon": "😇", "name": "ملاك الرحمة", "desc": "الطبيب أنقذ"},
-    "reaper": {"icon": "💀", "name": "حاصد الأرواح", "desc": "الجرّاح نجا للنهاية"},
-    "first_blood": {"icon": "🩸", "name": "أول دم", "desc": "أول ضحية"},
-    "survivor": {"icon": "🏆", "name": "الناجي", "desc": "بقي حياً"},
-}
+INSTANT_ROLES = {"Surgeon", "Doctor", "Psychopath", "Patient", "Screamer"}
 
 SHOP_ITEMS = {
     "shield": {"name": "🛡 درع الروح", "price": 120, "desc": "حماية لمرة واحدة ليلاً"},
     "spy_glass": {"name": "🔭 منظار", "price": 90, "desc": "كشف فريق لاعب"},
-    "file_gold": {"name": "📂 ملف ذهبي", "price": 180, "desc": "كشف دور لاعب عشوائي"},
     "title_vip": {"name": "👑 لقب VIP", "price": 600, "desc": "تاج بجانب الاسم"},
 }
 
-JOKER_OPTIONS = {
-    "cancel_vote": {"name": "🔄 إلغاء التصويت", "desc": "إبطال الأصوات"},
-    "shield_now": {"name": "🛡 حماية طارئة", "desc": "حماية فورية"},
-    "reveal_one": {"name": "👁 كشف فوري", "desc": "كشف دور"},
-    "double_vote": {"name": "🗳 صوت مزدوج", "desc": "صوتك بـ 2"},
-    "skip_night": {"name": "⏭ تخطّي ليلة", "desc": "إلغاء أفعال الليل"},
-}
-
-# ══════════════ أدوات مساعدة ══════════════
+# ══════════════ أدوات مساعدة وتنسيق ══════════════
 def clean(t, mx=200):
-    s = str(t or "")
-    s = s.replace('\n', ' ').replace('\r', '')
-    return html.escape(s)
+    return html.escape(str(t or "")[:mx].replace('\n', ' ').replace('\r', ''))
 
 def clean_name(t):
-    s = str(t or "مجهول")
-    s = s.replace('\n', '').replace('\r', '')
-    return html.escape(s)
+    return html.escape(str(t or "مجهول")[:30].replace('\n', '').replace('\r', ''))
 
 def pname(uid, name):
-    return f"<a href='tg://user?id={uid}'><b>{name}</b></a>"
-
-def pname_vip(uid, name):
     crown = "👑 " if has_title(uid, "title_vip") else ""
-    return f"{crown}<a href='tg://user?id={uid}'><b>{name}</b></a>"
-
-import unicodedata
-import re
+    return f"{crown}<a href='tg://user?id={uid}'><b>{clean_name(name)}</b></a>"
 
 def normalize_arabic(t):
-    if not t:
-        return ""
-
-    # إزالة التشكيل (الحركات)
+    if not t: return ""
     t = ''.join(c for c in t if unicodedata.category(c) != 'Mn')
-
-    # إزالة المسافات الزائدة وتحويل لحروف صغيرة + إزالة التشكيل المتبقي
     t = t.strip().lower()
-
-    # توحيد الحروف المتشابهة
-    replacements = [
-        ("أ|إ|آ", "ا"),
-        ("ة", "ه"),
-        ("ى", "ي"),
-        ("ؤ", "و"),
-        ("ئ", "ي")
-    ]
-    for a, b in replacements:
+    for a, b in [("أ|إ|آ", "ا"), ("ة", "ه"), ("ى", "ي"), ("ؤ", "و"), ("ئ", "ي")]:
         t = re.sub(a, b, t)
-
-    # تحويل الأرقام العربية إلى إنجليزية
-    t = re.sub(r'[٠-٩]', lambda m: str("٠١٢٣٤٥٦٧٨٩".index(m.group())), t)
-
     return re.sub(r'\s+', ' ', t).strip()
 
 def corrupt_text(text):
     words = text.split()
-    new_words =[]
-    for w in words:
-        if random.random() < 0.6: 
-            new_words.append("." * random.randint(2, 5))
-        else:
-            new_words.append(w)
-    return " ".join(new_words)
+    return " ".join(["..." + w[-1:] if len(w)>1 and random.random()<0.5 else w for w in words])
 
-# ══════════════ المحفظة والبروفايل ══════════════
+# ══════════════ الاقتصاد وقواعد البيانات ══════════════
 def get_wallet(uid):
     if uid not in wallets_db:
-        wallets_db = {"coins": 0, "gems": 0, "inventory":[], "titles": []}
-    return wallets_db
-
-def add_coins(uid, amount):
-    w = get_wallet(uid)
-    w += amount
+        wallets_db[uid] = {"coins": 0, "inventory": [], "titles": []}
+    return wallets_db[uid]
 
 def has_item(uid, item_id):
-    return item_id in get_wallet(uid)
+    w = get_wallet(uid)
+    return item_id in w["inventory"] or item_id in w["titles"]
 
 def use_item(uid, item_id):
     w = get_wallet(uid)
-    if item_id in w:
-        w.remove(item_id)
+    if item_id in w["inventory"]:
+        w["inventory"].remove(item_id)
         return True
     return False
 
 def has_title(uid, title_id):
-    return title_id in get_wallet(uid)
+    return title_id in get_wallet(uid)["titles"]
 
 def buy_item(uid, item_id):
-    if item_id not in SHOP_ITEMS:
-        return False, "❌ غير موجود"
+    if item_id not in SHOP_ITEMS: return False, "❌ الغرض غير موجود في السوق السوداء."
     w = get_wallet(uid)
-    item = SHOP_ITEMS
-    if w < item:
-        return False, "❌ رصيدك لا يكفي"
+    item = SHOP_ITEMS[item_id]
+    if w["coins"] < item["price"]: return False, "❌ عذراً، لا تملك رصيداً كافياً."
+    
+    w["coins"] -= item["price"]
     if item_id.startswith("title_"):
-        if item_id in w:
-            return False, "❌ تملكه بالفعل"
-        w -= item
-        w.append(item_id)
+        if item_id in w["titles"]: return False, "❌ أنت تملك هذا اللقب مسبقاً."
+        w["titles"].append(item_id)
     else:
-        w -= item
-        w.append(item_id)
-    return True, f"✅ حصلت على <b>{item}</b>"
+        w["inventory"].append(item_id)
+    return True, f"✅ تمت الصفقة بنجاح. حصلت على <b>{item['name']}</b>."
 
 def get_profile(uid):
     if uid not in profiles_db:
-        profiles_db = {
-            "games": 0, "wins": 0, "losses": 0,
-            "kills_as_surgeon": 0, "saves_as_doc": 0,
-            "reveals_as_obs": 0, "bombs_triggered": 0,
-            "deaths": 0, "messages_sent": 0,
-            "best_streak": 0, "current_streak": 0,
-            "xp": 0,
-        }
-    return profiles_db
+        profiles_db[uid] = {"games": 0, "wins": 0, "deaths": 0}
+    return profiles_db[uid]
 
-def add_xp(uid, amount):
-    p = get_profile(uid)
-    p += amount
-
-def update_hall(category, uid, value=1):
-    if uid not in hall_of_fame:
-        hall_of_fame = 0
-    hall_of_fame += value
-
-# ══════════════ الإرسال والإدارة (الآمنة) ══════════════
+# ══════════════ الإرسال والإدارة ══════════════
 def safe_send(cid, text, **kw):
-    try:
-        return bot.send_message(cid, text, parse_mode="HTML", **kw)
-    except Exception as e:
-        print(f"Error sending to {cid}: {e}")
-        return None
+    try: return bot.send_message(cid, text, parse_mode="HTML", **kw)
+    except: return None
 
 def safe_pm(uid, text, **kw):
-    try:
-        return bot.send_message(uid, text, parse_mode="HTML", **kw)
-    except:
-        return None
-
-def safe_edit_caption(cid, mid, text, **kw):
-    try:
-        return bot.edit_message_caption(caption=text, chat_id=cid, message_id=mid, parse_mode="HTML", **kw)
-    except:
-        return None
-
-def safe_edit_text(cid, mid, text, **kw):
-    try:
-        return bot.edit_message_text(text, chat_id=cid, message_id=mid, parse_mode="HTML", **kw)
-    except:
-        return None
+    try: return bot.send_message(uid, text, parse_mode="HTML", **kw)
+    except: return None
 
 def delete_msg(cid, mid):
-    try:
-        bot.delete_message(cid, mid)
-    except:
-        pass
+    try: bot.delete_message(cid, mid)
+    except: pass
 
 def safe_pin(cid, mid):
-    try:
-        bot.pin_chat_message(cid, mid, disable_notification=True)
-    except:
-        pass
-
-def safe_unpin(cid, mid):
-    try:
-        bot.unpin_chat_message(cid, mid)
-    except:
-        pass
+    try: bot.pin_chat_message(cid, mid, disable_notification=True)
+    except: pass
 
 def safe_unpin_all(cid):
-    try:
-        bot.unpin_all_chat_messages(cid)
-    except:
-        pass
+    try: bot.unpin_all_chat_messages(cid)
+    except: pass
 
 def mute_all(cid):
-    try:
-        bot.set_chat_permissions(cid, types.ChatPermissions(can_send_messages=False))
-    except:
-        pass
+    try: bot.set_chat_permissions(cid, types.ChatPermissions(can_send_messages=False))
+    except: pass
 
 def unmute_all(cid):
-    try:
-        bot.set_chat_permissions(cid, types.ChatPermissions(
+    try: bot.set_chat_permissions(cid, types.ChatPermissions(
             can_send_messages=True, can_send_media_messages=True,
             can_send_other_messages=True, can_add_web_page_previews=True))
-    except:
-        pass
+    except: pass
 
 def mute_player(cid, uid):
-    try:
-        bot.restrict_chat_member(cid, uid, permissions=types.ChatPermissions(can_send_messages=False))
-    except:
-        pass
+    try: bot.restrict_chat_member(cid, uid, permissions=types.ChatPermissions(can_send_messages=False))
+    except: pass
 
 def unmute_player(cid, uid):
-    try:
-        bot.restrict_chat_member(cid, uid, permissions=types.ChatPermissions(
-                can_send_messages=True, can_send_media_messages=True,
-                can_send_other_messages=True))
-    except:
-        pass
+    try: bot.restrict_chat_member(cid, uid, permissions=types.ChatPermissions(
+                can_send_messages=True, can_send_media_messages=True, can_send_other_messages=True))
+    except: pass
 
 def silence_all(cid):
     mute_all(cid)
     with bot_lock:
         if cid not in games: return
-        uids = list(games.keys())
-    for uid in uids:
-        mute_player(cid, uid)
+        uids = list(games[cid]["players"].keys())
+    for uid in uids: mute_player(cid, uid)
 
 def open_discussion(cid):
     with bot_lock:
         if cid not in games: return
-        dead_u = [u for u, p in games.items() if not p]
-        alive_u =.items() if p]
+        dead_u = [u for u, p in games[cid]["players"].items() if not p["alive"]]
+        alive_u = [u for u, p in games[cid]["players"].items() if p["alive"]]
     unmute_all(cid)
     time.sleep(0.3)
     for uid in alive_u: unmute_player(cid, uid)
-    time.sleep(0.2)
     for uid in dead_u: mute_player(cid, uid)
 
-# ══════════════ التنظيف الشامل ══════════════
-_cleanup_lock = threading.Lock()
-
 def force_cleanup(cid):
-    with _cleanup_lock:
-        with bot_lock:
-            if cid in games:
-                uids = list(games.get("players", {}).keys())
-                for uid in uids:
-                    user_to_game.pop(uid, None)
-                del games
-        safe_unpin_all(cid)
-        unmute_all(cid)
-        try:
-            bot.set_chat_permissions(cid, types.ChatPermissions(
-                can_send_messages=True, can_send_media_messages=True,
-                can_send_other_messages=True, can_add_web_page_previews=True))
-        except:
-            pass
+    with bot_lock:
+        if cid in games:
+            mid = games[cid].get("lobby_mid")
+            if mid: delete_msg(cid, mid)
+            for uid in list(games[cid]["players"].keys()):
+                user_to_game.pop(uid, None)
+            del games[cid]
+    safe_unpin_all(cid)
+    unmute_all(cid)
 
 # ══════════════ أدوات اللعبة ══════════════
 def get_alive(cid):
     if cid not in games: return {}
-    return {u: p for u, p in games.items() if p}
+    return {u: p for u, p in games[cid]["players"].items() if p["alive"]}
 
 def get_alive_except(cid, exc):
     return {u: p for u, p in get_alive(cid).items() if u != exc}
 
-def is_participant(cid, uid):
-    return cid in games and uid in games
-
-def find_game_for_user(uid):
-    return user_to_game.get(uid)
-
 def valid_game(cid, gid):
-    return cid in games and games == gid
-
-def is_game_active(cid, gid):
-    with bot_lock:
-        return valid_game(cid, gid)
+    return cid in games and games[cid]["game_id"] == gid
 
 def kill_player(g, uid):
-    if not g: return False
-    g = False
-    if uid not in g:
-        g.append(uid)
-    if not g:
-        g = uid
+    if uid not in g["players"]: return False
+    g["players"][uid]["alive"] = False
     return True
 
 def get_original_team(g, uid):
-    ot = g.get("original_team", {})
-    if uid in ot: return ot
-    return ROLE_TEAM.get(g, "good")
+    return g["original_team"].get(uid, ROLE_TEAM.get(g["players"].get(uid, {}).get("role"), "good"))
 
 def safe_sleep(cid, gid, seconds):
     end = time.time() + seconds
@@ -467,160 +292,100 @@ def safe_sleep(cid, gid, seconds):
 
 def get_room_players(g, room_id, alive_only=True):
     result = {}
-    for uid, p in g.items():
-        if alive_only and not p: continue
-        if g.get(uid) == room_id:
-            result = p
+    for uid, p in g["players"].items():
+        if alive_only and not p["alive"]: continue
+        if g["room_choices"].get(uid) == room_id:
+            result[uid] = p
     return result
 
 def get_player_room(g, uid):
-    return g.get(uid)
+    return g["room_choices"].get(uid)
 
 def get_room_targets(g, uid, exclude_self=True):
     my_room = get_player_room(g, uid)
     if not my_room: return {}
     
     if my_room == 5: 
-        players = {u: p for u, p in g.items() if p}
+        players = {u: p for u, p in g["players"].items() if p["alive"]}
     else: 
         players = get_room_players(g, my_room)
     
-    if exclude_self:
-        return {u: p for u, p in players.items() if u != uid}
+    if exclude_self: return {u: p for u, p in players.items() if u != uid}
     return players
 
 def get_roles_for_count(n):
     n = max(n, 4)
-    base =
+    base = ["Surgeon", "Doctor", "Observer", "Screamer"]
+    
     if n >= 5: base.append("Anesthetist")
     if n >= 6: base.append("Nurse") 
-    if n >= 7: base.append("Security") 
+    if n >= 7: base.append("Psychopath")
+    if n >= 8: base.append("Swapper")
+    if n >= 9: base.append("Instigator")
+    if n >= 10: base.append("Security")
     
-    pool =
+    pool = ["Patient", "Doctor", "Observer", "Screamer", "Swapper"]
     while len(base) < n:
-        r = random.choice(pool)
-        base.append(r)
+        base.append(random.choice(pool))
         
     random.shuffle(base)
     return base
 
-def transfer_radio(g, dead_uid, killer_uid=None):
-    if dead_uid in g:
-        g.remove(dead_uid)
-        new_holder = None
-        if killer_uid and killer_uid in g and g:
-            new_holder = killer_uid
-        else:
-            alive = if g and u != dead_uid]
-            if alive:
-                new_holder = random.choice(alive)
-        if new_holder:
-            g.add(new_holder)
-            safe_pm(new_holder, "📻 <b>لقد عثرت على لاسلكي!</b>\n\nتحدث عبره باستخدام:\n<code>/لاسلكي الرسالة</code>")
-
-# ══════════════ بيانات اللعبة ══════════════
+# ══════════════ بيانات وهيكلة اللعبة ══════════════
 def new_game_data(gtype, host_id, gid):
     return {
         "type": gtype, "host": host_id, "players": {}, "phase": "joining",
         "start_at": time.time() + DEFAULT_WAIT_TIME,
-        "total_wait": DEFAULT_WAIT_TIME,
-        "last_activity": time.time(), "game_id": gid,
+        "total_wait": DEFAULT_WAIT_TIME, "game_id": gid,
         "lobby_mid": None, "lobby_mt": "text",
-        "rooms_enabled": (gtype == "hospital"),
-        "room_choices": {},
-        "room_chat_notified": set(),
+        
+        # --- Hospital Specific ---
+        "rooms_enabled": (gtype == "hospital"), "room_choices": {},
         "actions": {}, "votes": {}, "confirm_votes": {},
-        "bomb": {"is_set": False, "q": "", "a": "", "raw": "", "defuser": None, "owner": None},
-        "round": 0, "dead_list":[], "silenced": set(),
-        "sedated_current": set(),
-        "screamer_visitors": {}, "swap_data": {}, "nurse_poison": {},
-        "will_pending": {}, "anesthetist_uses": {},
-        "nurse_has_poison": {},
+        "bomb": {"is_set": False, "q": "", "a": "", "defuser": None},
+        "round": 0, "sedated_current": set(), "swap_data": {},
+        "screamer_knife_used": set(), "security_ammo": {}, "security_mistakes": {},
         "patient_used": set(), "psycho_phase": {},
         "confirm_target": None, "defense_target": None,
-        "asker": None, "vote_question": None,
-        "asked_uids": set(), "asked_uids_done": set(),
-        "vote_round": 0, "game_started_at": 0,
-        "ask_msg_id": None,
-        "role_revealed": set(), "ability_night": {},
-        "ability_drawn": set(),
-        "night_acted": set(), "instigator_steal": {},
-        "observer_targets": {},
-        "ask_prompt_sent": False, "ask_type": None, "ask_type_chosen": False,
-        "qa_answers": {}, "qa_answer_pending": set(), "qa_answer_done": set(), "qa_current_round": 0,
-        "afk_count": {}, "afk_warned": set(),
-        "round_voted": set(), "round_night_acted": set(),
-        "round_msg_count": {}, "round_complete_actions": set(),
-        "med_items": {},
-        "blackout_used": False, "blackout_active": False,
         "last_gasp_pending": {}, "last_gasp_text": {},
-        "original_team": {}, "evil_chat_ids": set(),
-        "suspect_votes": {},
-        "joker_holder": None, "joker_used": False, "joker_effect": None,
-        "radio_holders": set(),
-        "security_ammo": {}, 
-        "observer_last_reveal": None,
-        "security_checked_cam": set(), 
-        "stats": {
-            "msg_count": {}, "first_death": None,
-            "surgeon_uid": None, "voted_surgeon": set(),
-            "doc_saves": 0, "doc_fails": 0,
-            "bomb_exploded": False, "bomb_defuser": None,
-            "scalpel_kills": set(), "voted_against": {},
-            "rooms_history":[],
-        },
-        "pinned_mids":[], "winners_team": None,
+        "original_team": {}, "pinned_mids": [],
+        
+        # --- Vote Game Specific ---
+        "asker": None, "ask_type": None, "ask_type_chosen": False, 
+        "vote_question": None, "asked_uids": set(), 
+        "qa_answers": {}, "qa_answer_pending": set(), "vote_game_votes": {}
     }
 
-# ══════════════ نظام الفوز ══════════════
+# ══════════════ نظام الفوز وتوزيع المكافآت (المستشفى) ══════════════
 def _check_win_inner(cid):
     if cid not in games: return None
-    g = games
-    pp = g
-    alive = {u: p for u, p in pp.items() if p}
+    g = games[cid]
+    pp = g["players"]
+    alive = {u: p for u, p in pp.items() if p["alive"]}
 
-    if not alive:
-        g = None
-        return "⚰️ <b>لا ناجين... المستشفى ابتلع الجميع.</b>"
+    if not alive: return "⚰️ <b>لا ناجين... المستشفى ابتلع الجميع في ظلامه الحالك.</b>"
 
-    evil_alive =
-    good_alive =
-    psycho_alive =
-    neutral_alive =
+    evil_alive = [u for u in alive if ROLE_TEAM.get(pp[u]["role"]) == "evil"]
+    good_alive = [u for u in alive if ROLE_TEAM.get(pp[u]["role"]) == "good"]
+    psycho_alive = [u for u in alive if ROLE_TEAM.get(pp[u]["role"]) == "psycho"]
 
     total_alive = len(alive)
 
-    if psycho_alive and not evil_alive and len(alive) <= 2:
-        g = "psycho"
-        return "🤡 <b>المجنون يرقص وحيداً فوق الجثث.</b>"
+    if psycho_alive and not evil_alive and total_alive <= 2:
+        return "🤡 <b>المجنون يرقص وحيداً فوق الجثث المتفحمة!</b>"
 
-    if not good_alive and not psycho_alive and not neutral_alive:
-        g = "evil"
-        return "🔪 <b>الظلام انتصر... الأطباء ماتوا.</b>"
+    if not good_alive and not psycho_alive:
+        return "🔪 <b>الظلام انتصر... الجراح أتم عمليته الجراحية بنجاح.</b>"
 
     if not evil_alive and not psycho_alive:
-        g = "good"
-        return "🩺 <b>تم تطهير المستشفى... النور ينتصر.</b>"
+        return "🩺 <b>أشرقت الشمس... تم تطهير المستشفى ونجا الأبرياء!</b>"
 
-    # حالات خاصة
-    has_surgeon = any(pp == "Surgeon" for u in evil_alive)
-    has_active_killer = has_surgeon or any(pp == "Anesthetist" for u in evil_alive)
-    
+    has_surgeon = any(pp[u]["role"] == "Surgeon" for u in evil_alive)
     if total_alive == 2 and has_surgeon and good_alive:
-        g = "evil"
-        return "🔪 <b>المشرط أسرع... الجرّاح فاز.</b>"
+        return "🔪 <b>المشرط أسرع من العلاج... الجرّاح فاز باللحظة الأخيرة.</b>"
 
-    if evil_alive and not has_active_killer:
-        patient_can = any(pp == "Patient" and u not in g.get("patient_used", set()) for u in alive)
-        dead_surg = any(pp == "Surgeon" and not pp for u in pp)
-        if not (patient_can and dead_surg):
-            g = "good"
-            return "🩺 <b>سقط آخر قاتل...</b>"
-
-    non_evil = len(good_alive) + len(psycho_alive) + len(neutral_alive)
-    if evil_alive and len(evil_alive) >= non_evil:
-        g = "evil"
-        return "🔪 <b>الكثرة تغلب... الأشرار سيطروا.</b>"
+    if evil_alive and len(evil_alive) >= len(good_alive) + len(psycho_alive):
+        return "🔪 <b>الكثرة تغلب... الأشرار سيطروا على الأروقة.</b>"
 
     return None
 
@@ -636,43 +401,47 @@ def check_win_safe(cid, gid):
 def show_results(cid, msg):
     with bot_lock:
         if cid not in games: return
-        g = games
-        g = "ended"
+        g = games[cid]
+        g["phase"] = "ended"
         
         lines = []
-        for u, p in g.items():
-            status = "حي" if p else "ميت"
-            lines.append(f"▫️ {p}: {ROLE_DISPLAY.get(p, '?')} ({status})")
+        for u, p in g["players"].items():
+            status = "❤️ حي" if p["alive"] else "💀 ميت"
+            lines.append(f"▫️ {pname(u, p['name'])} <b>({ROLE_DISPLAY.get(p['role'], '?')})</b> - {status}")
+            
+            # 💰 توزيع الغنائم للإحصائيات
+            prof = get_profile(u)
+            wall = get_wallet(u)
+            prof["games"] += 1
+            wall["coins"] += 50 
+            if not p["alive"]:
+                prof["deaths"] += 1
+            else:
+                prof["wins"] += 1
+                wall["coins"] += 50 
     
-    full = f"{msg}\n\n<b>الأدوار:</b>\n\n" + "\n\n".join(lines)
+    full = f"{msg}\n\n📋 <b>سجلات المستشفى (الهويات الحقيقية):</b>\n\n" + "\n\n".join(lines) + "\n\n💰 <i>تم توزيع العملات على جميع المشاركين والناجين! تفقد /profile</i>"
     safe_send(cid, full)
     force_cleanup(cid)
 
-def check_afk(cid):
-    return [],[]
-
-def do_medical_drop(cid, gid):
-    pass
-
-# ══════════════ حلقة اللعبة ══════════════
+# ══════════════ حلقة اللعبة المستمرة ══════════════
 def game_loop():
     while True:
         time.sleep(3)
         now = time.time()
         to_del = []
-        to_start =[]
+        to_start = []
         with bot_lock:
-            for cid in list(games.keys()):
-                g = games
-                if now - g > INACTIVITY_TIMEOUT:
+            for cid, g in list(games.items()):
+                if now - g.get("start_at", now) > INACTIVITY_TIMEOUT and g["phase"] != "joining":
                     to_del.append(cid)
                     continue
-                if g == "joining" and g <= now:
-                    g = "starting"
-                    to_start.append((cid, g, g))
+                if g["phase"] == "joining" and g["start_at"] <= now:
+                    g["phase"] = "starting"
+                    to_start.append((cid, g["type"], g["game_id"]))
         
         for c in to_del:
-            safe_send(c, "🕯 <i>انطفأت الأنوار... (انتهت المهلة)</i>")
+            safe_send(c, "🕯 <i>انطفأت الأنوار... (تم إنهاء الجلسة بسبب الخمول أو عدم الاكتمال)</i>")
             force_cleanup(c)
         
         for c, t, gid in to_start:
@@ -681,53 +450,51 @@ def game_loop():
 
 threading.Thread(target=game_loop, daemon=True).start()
 
-# ══════════════ اللوبي ══════════════
+# ══════════════ نظام اللوبي (الانتظار) ══════════════
 MIN_HOSPITAL = 4
 MIN_VOTE = 3
 
 def build_lobby(cid):
     if cid not in games: return "Error"
-    g = games
-    rem = max(0, int(g - time.time()))
-    total = max(g.get("total_wait", DEFAULT_WAIT_TIME), 1)
-    gt = g
-    pp = g
+    g = games[cid]
+    rem = max(0, int(g["start_at"] - time.time()))
+    total = max(g["total_wait"], 1)
+    gt = g["type"]
+    pp = g["players"]
     n = len(pp)
 
     if gt == "hospital":
         mn = MIN_HOSPITAL
-        title = "🏥 المستشفى"
-        flavor = "الممرات مظلمة... ثق بحدسك فقط."
+        title = "🏥 <b>أبواب المستشفى مفتوحة...</b>"
+        flavor = "الممرات مظلمة... ثق بحدسك فقط ولا تدير ظهرك لأحد."
     else:
         mn = MIN_VOTE
-        title = "⚖️ مجلس التصويت"
-        flavor = "من صاحب الحجة الأقوى؟"
+        title = "⚖️ <b>مجلس التصويت والمحاكمة</b>"
+        flavor = "استعدوا للمواجهات الفكرية وكشف الأسرار."
 
     if n == 0:
-        pt = "   <i>(لا أحد بعد)</i>"
+        pt = "   <i>(صمت... لا يوجد أحد بعد)</i>"
     else:
-        lines =[]
-        for u, p in pp.items():
-            lines.append(f"   🔹 {pname_vip(u, p)}")
-        pt = "\n".join(lines)
+        lines = [f"   👤 {pname(u, p['name'])}" for u, p in pp.items()]
+        pt = "\n\n".join(lines)
 
     bar_f = int(min(max(rem / total, 0), 1.0) * 10)
-    bar = "▓" * bar_f + "░" * (10 - bar_f)
-    m, sc = divmod(max(0, rem), 60)
-    ts = f"{m}:{sc:02d}" if m else f"{sc}s"
+    bar = "🟩" * bar_f + "⬜" * (10 - bar_f)
+    m, sc = divmod(rem, 60)
+    ts = f"{m}:{sc:02d}" if m else f"{sc} ثانية"
 
     return (
-        f"<b>{title}</b>\n\n"
-        f"⏳ {bar}  <b>{ts}</b>\n\n"
+        f"{title}\n\n"
+        f"⏳ {bar} \n⏱ <b>الوقت المتبقي:</b> {ts}\n\n"
         f"<i>{flavor}</i>\n\n"
-        f"👥 <b>المسجلون ({n}):</b>\n\n{pt}\n\n"
-        f"📌 مطلوب: <b>{mn}</b>\n\n"
+        f"👥 <b>اللاعبون المسجلون ({n}):</b>\n\n{pt}\n\n"
+        f"📌 مطلوب كحد أدنى: <b>{mn}</b>\n\n"
         f"🚀 <code>/force_start</code>  ·  ⏱ <code>/time 30</code>"
     )
 
 def join_markup(gid, gtype="hospital"):
     m = types.InlineKeyboardMarkup()
-    btn_text = "💀 توقيع الدخول" if gtype == "hospital" else "🗳️ تسجيل الحضور"
+    btn_text = "🩸 توقيع الدخول" if gtype == "hospital" else "🗳️ تسجيل الحضور"
     m.add(types.InlineKeyboardButton(btn_text, callback_data=f"join_{gid}"))
     return m
 
@@ -736,9 +503,9 @@ def lobby_tick(cid, gid):
     while True:
         time.sleep(8)
         with bot_lock:
-            if not valid_game(cid, gid) or games != "joining": return
-            rem = max(0, int(games - time.time()))
-            gt = games
+            if not valid_game(cid, gid) or games[cid]["phase"] != "joining": return
+            rem = max(0, int(games[cid]["start_at"] - time.time()))
+            gt = games[cid]["type"]
 
         if rem <= 25 and not resent:
             resent = True
@@ -746,347 +513,180 @@ def lobby_tick(cid, gid):
                 if not valid_game(cid, gid): return
                 txt = build_lobby(cid)
                 mk = join_markup(gid, gt)
-            asset = ASSETS if gt == "hospital" else ASSETS
             
-            nm = None
-            try:
-                if gt == "hospital":
-                    nm = bot.send_animation(cid, asset, caption=txt, parse_mode="HTML", reply_markup=mk)
-                else:
-                    nm = bot.send_photo(cid, asset, caption=txt, parse_mode="HTML", reply_markup=mk)
-            except Exception as e:
-                print(f"Media Failed: {e}")
-                nm = safe_send(cid, txt, reply_markup=mk)
-
+            nm = safe_send(cid, txt, reply_markup=mk)
             if nm:
                 with bot_lock:
                     if valid_game(cid, gid):
-                        games = nm.message_id
-                        games = "media" if nm.content_type in else "text"
+                        games[cid]["lobby_mid"] = nm.message_id
+                        games[cid]["lobby_mt"] = "text"
             continue
 
         with bot_lock:
-            if not valid_game(cid, gid) or games != "joining": return
+            if not valid_game(cid, gid) or games[cid]["phase"] != "joining": return
             txt = build_lobby(cid)
-            gt = games
-            mk = join_markup(games, gt)
-            mid = games.get("lobby_mid")
-            mt = games.get("lobby_mt", "text")
+            mk = join_markup(gid, games[cid]["type"])
+            mid = games[cid]["lobby_mid"]
+        
         if mid:
-            if mt == "media": safe_edit_caption(cid, mid, txt, reply_markup=mk)
-            else: safe_edit_text(cid, mid, txt, reply_markup=mk)
+            try: bot.edit_message_text(text=txt, chat_id=cid, message_id=mid, parse_mode="HTML", reply_markup=mk)
+            except: pass
+            
         if rem <= 0: return
 
-# ══════════════ الانضمام ══════════════
+# ══════════════ الانضمام والتفاعل ══════════════
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 def cb_join(call):
     cid, uid = call.message.chat.id, call.from_user.id
-    try: gid = int(call.data.split("_"))
+    try: gid = int(call.data.split("_")[1])
     except: return
     
     with bot_lock:
         if not valid_game(cid, gid):
-            return bot.answer_callback_query(call.id, "⛔ انتهت", show_alert=True)
-        if games != "joining":
-            return bot.answer_callback_query(call.id, "⛔ بدأت", show_alert=True)
-        if uid in games:
-            return bot.answer_callback_query(call.id, "✅ مسجل", show_alert=True)
-        if len(games) >= MAX_PLAYERS:
-            return bot.answer_callback_query(call.id, "⛔ ممتلئ", show_alert=True)
-        ex = find_game_for_user(uid)
-        if ex and ex != cid:
-            return bot.answer_callback_query(call.id, "⛔ أنت في لعبة أخرى", show_alert=True)
+            return bot.answer_callback_query(call.id, "⛔ انتهى وقت التسجيل أو اللعبة ألغيت.", show_alert=True)
+        if games[cid]["phase"] != "joining":
+            return bot.answer_callback_query(call.id, "⛔ اللعبة بدأت بالفعل.", show_alert=True)
+        if uid in games[cid]["players"]:
+            return bot.answer_callback_query(call.id, "✅ أنت مسجل مسبقاً في السجلات.", show_alert=False)
+        if len(games[cid]["players"]) >= MAX_PLAYERS:
+            return bot.answer_callback_query(call.id, "⛔ الغرفة ممتلئة.", show_alert=True)
+        if uid in user_to_game and user_to_game[uid] != cid:
+            return bot.answer_callback_query(call.id, "⛔ أنت مسجل في جلسة أخرى.", show_alert=True)
             
-        games = {
+        games[cid]["players"][uid] = {
             "name": clean_name(call.from_user.first_name),
             "role": "Patient", "alive": True
         }
-        user_to_game = cid
-        games = time.time()
-        cnt = len(games)
-        gt = games
+        user_to_game[uid] = cid
+        games[cid]["start_at"] = time.time() + max(15, games[cid]["start_at"] - time.time())
+        cnt = len(games[cid]["players"])
         
-    bot.answer_callback_query(call.id, f"✅ تم ({cnt})")
+    bot.answer_callback_query(call.id, f"✅ تم تسجيلك بنجاح ({cnt})", show_alert=False)
     
     with bot_lock:
         if not valid_game(cid, gid): return
         txt = build_lobby(cid)
-        mk = join_markup(games, gt)
-        mid = games.get("lobby_mid")
-        mt = games.get("lobby_mt", "text")
+        mk = join_markup(gid, games[cid]["type"])
+        mid = games[cid].get("lobby_mid")
     if mid:
-        if mt == "media": safe_edit_caption(cid, mid, txt, reply_markup=mk)
-        else: safe_edit_text(cid, mid, txt, reply_markup=mk)
+        try: bot.edit_message_text(text=txt, chat_id=cid, message_id=mid, parse_mode="HTML", reply_markup=mk)
+        except: pass
 
-# ══════════════ فلتر الرسائل ══════════════
-@bot.message_handler(content_types=,
-                     func=lambda m: m.chat.type in ("group", "supergroup") and m.chat.id in games and not (m.text or "").startswith("/"))
-def group_msg_filter(m):
-    cid, uid = m.chat.id, m.from_user.id
-    text = m.text or ""
-    do_delete = False
-    do_blackout = False
-    blackout_text = ""
-
-    with bot_lock:
-        if cid not in games: return
-        g = games
-        phase = g
-
-        if phase == "bomb":
-            if not is_participant(cid, uid) or not g.get(uid, {}).get("alive", False):
-                do_delete = True
-            elif text:
-                if normalize_arabic(text) == g:
-                    g = "defused"
-                    g = uid
-                else: do_delete = True
-            else: do_delete = True
-            if do_delete: delete_msg(cid, m.message_id)
-            return
-
-        if phase == "defense":
-            # السماح للجميع بالكلام في مرحلة الدفاع
-            if is_participant(cid, uid) and g:
-                g = g.get(uid, 0) + 1
-                return
-            else: do_delete = True
-
-        if not do_delete and is_participant(cid, uid):
-            p = g.get(uid)
-            if p and not p: do_delete = True
-
-        if not do_delete and phase in SILENT_PHASES:
-            if is_participant(cid, uid): do_delete = True
-
-        if not do_delete and phase == "discussion":
-            if is_participant(cid, uid) and g:
-                if text:
-                    g = g.get(uid, 0) + 1
-                    g = g.get(uid, 0) + 1
-                if g.get("blackout_active", False):
-                    do_blackout = True
-                    blackout_text = text or "..."
-
-    if do_delete: delete_msg(cid, m.message_id)
-    elif do_blackout:
-        delete_msg(cid, m.message_id)
-        safe_send(cid, f"🔇 <i>همس:</i> {clean(blackout_text, 50)}")
-
-@bot.message_handler(content_types=, func=lambda m: m.chat.type in ("group", "supergroup"))
-def on_member_leave(m):
-    if not m.left_chat_member: return
-    uid = m.left_chat_member.id
-    cid = m.chat.id
-    with bot_lock:
-        if cid not in games or uid not in games: return
-        g = games
-        if not g: return
-        kill_player(g, uid)
-        pn = pname(uid, g)
-        rd = ROLE_DISPLAY.get(g, "?")
-        user_to_game.pop(uid, None)
-        gid = g
-    safe_send(cid, f"🚪 {pn} غادر... وكان: {rd}")
-    check_win_safe(cid, gid)
-
-# ══════════════ أوامر المجموعة والتعليمات ══════════════
-@bot.message_handler(func=lambda m: m.chat.type in ("group", "supergroup") and m.text and m.text.startswith("/"))
+# ══════════════ أوامر المجموعة ══════════════
+@bot.message_handler(commands=['hospital', 'vote', 'force_start', 'cancel', 'time', 'commands', 'rooms_cancel', 'shop', 'buy', 'profile', 'tutorial'], chat_types=['group', 'supergroup'])
 def group_cmd(m):
     cid = m.chat.id
     uid = m.from_user.id
-    raw = m.text.split().split("@").lower()
+    raw = m.text.split()[0].split("@")[0].lower()
 
-    deletable = {"/hospital", "/vote", "/force_start", "/cancel", "/done", "/time", "/commands", "/hall", "/rooms_cancel", "/لاسلكي", "/كشف_الكاميرات", "/shop", "/buy", "/profile", "/roles", "/tutorial"}
-    if raw in deletable: delete_msg(cid, m.message_id)
+    delete_msg(cid, m.message_id)
 
     if raw == "/hospital": init_game(m, "hospital")
     elif raw == "/vote": init_game(m, "vote")
     elif raw == "/time": do_time(m)
     elif raw == "/force_start": do_force(m)
-    elif raw in ("/cancel", "/done"): do_cancel(m)
+    elif raw == "/cancel": do_cancel(m)
     elif raw == "/commands": do_commands(m)
-    elif raw == "/hall": do_hall(m)
     elif raw == "/rooms_cancel": do_rooms_cancel(m)
     elif raw == "/shop": do_shop(m)
     elif raw == "/profile": do_profile(m)
-    elif raw == "/buy": do_buy(m)
-    elif raw == "/roles": do_roles(m)
     elif raw == "/tutorial": do_tutorial(m)
+    elif raw == "/buy": 
+        args = m.text.split()
+        if len(args) > 1: buy_item(uid, args[1])
 
 def init_game(msg, gtype):
     cid = msg.chat.id
     uid = msg.from_user.id
-    if msg.chat.type not in ("group", "supergroup"): return
 
     with bot_lock:
         if cid in games:
-            g = games
-            is_stuck = False
-            if g == "joining" and (time.time() - g > 300):
-                is_stuck = True
-            
-            if is_stuck:
-                uids = list(g.keys())
-                for u in uids: user_to_game.pop(u, None)
-                del games
+            if games[cid]["phase"] == "joining" and (time.time() - games[cid]["start_at"] > 120):
+                force_cleanup(cid) 
             else:
-                return safe_send(cid, "⚠️ <i>اللعبة جارية!</i>")
+                return safe_send(cid, "⚠️ <i>هناك جلسة قيد التحضير أو جارية بالفعل هنا!</i>")
 
-        if find_game_for_user(uid):
-            return safe_send(cid, "⚠️ <i>أنت في لعبة أخرى.</i>")
+        if uid in user_to_game:
+            return safe_send(cid, "⚠️ <i>عذراً، أنت متورط في جلسة أخرى حالياً.</i>")
 
         gid = int(time.time() * 1000) % 2147483647
-        games = new_game_data(gtype, uid, gid)
+        games[cid] = new_game_data(gtype, uid, gid)
 
     txt = build_lobby(cid)
     mk = join_markup(gid, gtype)
     
-    m2 = None
-    try:
-        if gtype == "hospital":
-            m2 = bot.send_animation(cid, ASSETS, caption=txt, parse_mode="HTML", reply_markup=mk)
-        else:
-            m2 = bot.send_photo(cid, ASSETS, caption=txt, parse_mode="HTML", reply_markup=mk)
-    except Exception as e:
-        print(f"Lobby Media Failed: {e}")
-        m2 = safe_send(cid, txt, reply_markup=mk)
-    
+    m2 = safe_send(cid, txt, reply_markup=mk)
     if m2:
         with bot_lock:
             if cid in games:
-                games = m2.message_id
-                games = "media" if m2.content_type in else "text"
+                games[cid]["lobby_mid"] = m2.message_id
+                games[cid]["lobby_mt"] = "text"
     
     threading.Thread(target=lobby_tick, args=(cid, gid), daemon=True).start()
 
 def do_time(m):
-    cid, uid = m.chat.id, m.from_user.id
+    cid = m.chat.id
     with bot_lock:
-        if cid not in games or games != "joining": return
-        if games != uid:
-            try:
-                st = bot.get_chat_member(cid, uid).status
-                if st not in ('administrator', 'creator'): return
-            except: return
+        if cid not in games or games[cid]["phase"] != "joining": return
         try:
-            s = int(m.text.split()) if len(m.text.split()) > 1 else 30
-            s = min(max(s, 10), 120)
-            games += s
-            r = int(games - time.time())
-            games = max(r, 1)
-            games = time.time()
-        except: return
+            s = int(m.text.split()[1]) if len(m.text.split()) > 1 else 30
+            games[cid]["start_at"] += min(s, 120)
+        except: pass
 
 def do_force(m):
-    cid, uid = m.chat.id, m.from_user.id
+    cid = m.chat.id
     with bot_lock:
-        if cid not in games or games != "joining": return
-        if games != uid:
-            try:
-                st = bot.get_chat_member(cid, uid).status
-                if st not in ('administrator', 'creator'): return
-            except: return
-        games = time.time()
+        if cid in games and games[cid]["phase"] == "joining":
+            games[cid]["start_at"] = time.time()
 
 def do_cancel(m):
-    cid, uid = m.chat.id, m.from_user.id
+    cid = m.chat.id
     with bot_lock:
         if cid not in games: return
-        is_auth = (games == uid)
-    if not is_auth:
-        try: is_auth = bot.get_chat_member(cid, uid).status in
-        except: pass
-    if not is_auth: return
-    safe_send(cid, "🛑 <b>تم إلغاء اللعبة.</b>")
+    safe_send(cid, "🛑 <b>تم إلغاء الجلسة بالكامل.</b>")
     force_cleanup(cid)
 
 def do_rooms_cancel(m):
-    cid, uid = m.chat.id, m.from_user.id
+    cid = m.chat.id
     with bot_lock:
-        if cid not in games or games != "joining": return
-        if games != uid:
-            try:
-                st = bot.get_chat_member(cid, uid).status
-                if st not in ('administrator', 'creator'): return
-            except: return
-        current = games.get("rooms_enabled", True)
-        games = not current
-        new_state = games
-    if new_state: safe_send(cid, "🏠 <i>الغرف: مفعّلة</i>")
-    else: safe_send(cid, "🏠 <i>الغرف: معطّلة</i>")
-
-def do_roles(m):
-    safe_pm(m.from_user.id, "🎭 <b>دليل المستشفى السري:</b>\n\n" + "\n\n".join())
+        if cid not in games or games[cid]["phase"] != "joining": return
+        games[cid]["rooms_enabled"] = not games[cid]["rooms_enabled"]
+        state = "مفعّلة ✅" if games[cid]["rooms_enabled"] else "معطّلة ❌"
+    safe_send(cid, f"🏠 <i>نظام الغرف والأجنحة الآن: {state}</i>")
 
 def do_tutorial(m):
     txt = (
-        "📚 <b>كيف تنجو من المستشفى؟ (دليل سريع)</b>\n\n"
-        "1️⃣ <b>توقيع الدخول:</b> انضم للعبة من خلال الزر الموجود في مجموعة الدردشة.\n\n"
-        "2️⃣ <b>اختيار المخبأ:</b> ستصلك رسالة لاختيار الغرفة. (إذا اخترت غرفة، لن يتمكن من استهدافك سوى من معك في نفس الغرفة. إذا اخترت الممر، يمكنك استهداف الجميع، لكن الجميع سيراك!).\n\n"
-        "3️⃣ <b>الليل يحل:</b>\n"
-        "   - الأشرار (الجراح والمخدر) يختارون ضحاياهم من قائمتهم.\n"
-        "   - الأخيار (الطبيب، المراقب، الحارس) يستخدمون قدراتهم لحماية الفريق أو كشف الأشرار.\n\n"
-        "4️⃣ <b>طلوع الفجر:</b> يتم إعلان من مات الليلة الماضية، ويُفتح باب النقاش.\n\n"
-        "5️⃣ <b>المحاكمة:</b> يصوت الجميع ضد اللاعب المشتبه به. إذا تمت إدانته، يُحرق فوراً.\n\n"
-        "🏆 <b>كيف تفوز؟</b>\n"
-        "   - الأخيار: إعدام جميع الأشرار والمجانين.\n"
-        "   - الأشرار: قتل الأخيار حتى يتساوى العدد.\n"
-        "   - المجنون: خداع الجميع ليصوتوا ضده فيُعدم ويفجر المستشفى بأكمله!"
+        "📚 <b>دليل لعبة المستشفى والمجلس</b>\n\n"
+        "🏥 <b>المستشفى (/hospital):</b>\n"
+        "1️⃣ <b>التسجيل:</b> انقر للتوقيع.\n"
+        "2️⃣ <b>الهوية:</b> سيصلك دورك في الخاص.\n"
+        "3️⃣ <b>المخبأ:</b> اختر غرفة للاختباء فيها ليلاً.\n"
+        "4️⃣ <b>الليل:</b> يختار الأشرار ضحاياهم، ويحاول الأخيار الحماية أو الكشف.\n"
+        "5️⃣ <b>الصباح:</b> نكتشف الجثث ونصوّت لإعدام المشتبه به.\n\n"
+        "⚖️ <b>مجلس التصويت (/vote):</b>\n"
+        "كل لاعب سيعتلي المنصة بدوره ليطرح سؤالاً أو موضوعاً للنقاش. يمكنه اختيار (تصويت مباشر) أو (جمع الحجج)."
     )
     safe_pm(m.from_user.id, txt)
 
 def do_commands(m):
-    cid = m.chat.id
     cmd_text = (
-        "📖 <b>سجل الأوامر</b>\n\n"
-        "<code>/hospital</code> - فتح أبواب المستشفى (بدء اللعبة)\n\n"
-        "<code>/vote</code> - بدء مجلس التصويت\n\n"
-        "<code>/force_start</code> - إجبار اللعبة على البدء فوراً\n\n"
-        "<code>/time</code> - تمديد وقت التسجيل\n\n"
+        "📖 <b>سجل أوامر الإدارة</b>\n\n"
+        "<code>/hospital</code> - فتح أبواب المستشفى\n"
+        "<code>/vote</code> - بدء مجلس التصويت\n"
+        "<code>/force_start</code> - إجبار اللعبة على البدء\n"
+        "<code>/time 30</code> - تمديد وقت التسجيل\n"
         "<code>/cancel</code> - إلغاء الجلسة الحالية\n\n"
-        "<code>/myrole</code> - للتحقق من بطاقة هويتك مجدداً\n\n"
-        "<code>/roles</code> - عرض تفاصيل جميع الأدوار\n\n"
-        "<code>/tutorial</code> - إرسال دليل اللعب الشامل\n\n"
-        "<code>/alive</code> - كشف عن الأحياء المتبقين\n\n"
-        "<code>/profile</code> - إظهار ملفك الشخصي وإنجازاتك\n\n"
-        "<code>/shop</code> - فتح نافذة المتجر الأسود"
+        "<code>/shop</code> - فتح نافذة السوق السوداء\n"
+        "<code>/profile</code> - إظهار ملفك الشخصي"
     )
-    safe_send(cid, cmd_text)
-
-def do_hall(m):
-    cid = m.chat.id
-    lines =[]
-    def top_entry(cat, emoji, label):
-        data = hall_of_fame.get(cat, {})
-        if not data: return f"{emoji} {label}: <i>-</i>"
-        top_uid = max(data, key=data.get)
-        try:
-            user = bot.get_chat_member(cid, top_uid).user
-            name = clean_name(user.first_name)
-        except: name = str(top_uid)
-        return f"{emoji} {label}: <b>{name}</b> ({data})"
-
-    lines.append(top_entry("wins", "👑", "أكثر الانتصارات"))
-    lines.append(top_entry("surgeon_kills", "🔪", "أمهر جرّاح"))
-    lines.append(top_entry("doc_saves", "🩺", "أفضل طبيب"))
-    lines.append(top_entry("bombs", "🤡", "أخطر مجنون (مفجر)"))
-    lines.append(top_entry("deaths", "💀", "أكثر الضحايا"))
-    safe_send(cid, "🏆 <b>لوحة الشرف (أساطير المستشفى)</b>\n\n" + "\n\n".join(lines))
+    safe_send(m.chat.id, cmd_text)
 
 def do_shop(m):
     cid = m.chat.id
-    text = "🛒 <b>السوق المظلم</b>\nاستخدم <code>/buy كود</code> لاقتناء الأدوات.\n\n"
+    text = "🛒 <b>السوق المظلم (الأسود)</b>\nاستخدم <code>/buy كود</code> لاقتناء الأدوات.\n\n"
     for k, v in SHOP_ITEMS.items():
-        text += f"🔹 <b>{v}</b> ({v} 💰)\n   {v}\n   كود: <code>{k}</code>\n\n"
+        text += f"🔹 <b>{v['name']}</b> ({v['price']} 💰)\n   <i>{v['desc']}</i>\n   كود الشراء: <code>{k}</code>\n\n"
     safe_send(cid, text)
-
-def do_buy(m):
-    cid, uid = m.chat.id, m.from_user.id
-    try: item_id = m.text.split()
-    except: return safe_send(cid, "⚠️ صيغة الشراء: <code>/buy كود_الغرض</code>")
-    success, msg = buy_item(uid, item_id)
-    safe_send(cid, msg)
 
 def do_profile(m):
     cid, uid = m.chat.id, m.from_user.id
@@ -1095,836 +695,219 @@ def do_profile(m):
     
     txt = (
         f"👤 <b>الهوية:</b> {clean_name(m.from_user.first_name)}\n\n"
-        f"💰 <b>الرصيد:</b> {w} عملة\n"
-        f"🎮 <b>المواجهات:</b> {p}\n"
-        f"🏆 <b>النجاة:</b> {p}\n"
-        f"💀 <b>السقوط:</b> {p}\n"
-        f"🔪 <b>الضحايا (كجراح):</b> {p}\n"
-        f"🩺 <b>الإنقاذ (كطبيب):</b> {p}\n\n"
-        f"🎒 <b>المخزون:</b> {', '.join(w) if w else 'فارغ تماماً'}"
+        f"💰 <b>الرصيد:</b> {w['coins']} عملة\n"
+        f"🎮 <b>المواجهات:</b> {p['games']}\n"
+        f"🏆 <b>النجاة:</b> {p['wins']}\n"
+        f"💀 <b>السقوط:</b> {p['deaths']}\n\n"
+        f"🎒 <b>المخزون:</b> {', '.join(w['inventory']) if w['inventory'] else 'فارغ'}"
     )
     safe_send(cid, txt)
 
-# ══════════════ الغرف ══════════════
-def start_room_choosing(cid, gid):
+# ══════════════ 🏛 مجلس التصويت (VOTE GAME) ══════════════
+def start_vote_game(cid, expected_gid):
     with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        rooms_on = g.get("rooms_enabled", True)
+        if not valid_game(cid, expected_gid): return
+        g = games[cid]
+        mid = g.get("lobby_mid")
+        if mid: delete_msg(cid, mid)
 
-    if not rooms_on:
+        pp = g["players"]
+        if len(pp) < MIN_VOTE:
+            safe_send(cid, f"⚠️ <b>المجلس فارغ!</b>\nالعدد غير كافٍ للبدء ({len(pp)}/{MIN_VOTE}). تم رفع الجلسة.")
+            force_cleanup(cid)
+            return
+            
+        g["phase"] = "vote_round"
+        g["round"] = 0
+        gid = g["game_id"]
+    
+    safe_send(cid, "🏛 <b>أبواب مجلس التصويت تُغلق...</b>\n\nالجميع يجلس على طاولته. استعدوا للمواجهة الفكرية وكشف الحقائق.")
+    if not safe_sleep(cid, gid, 3): return
+    
+    threading.Thread(target=run_vote_round, args=(cid, gid), daemon=True).start()
+
+def run_vote_round(cid, gid):
+    while True:
         with bot_lock:
             if not valid_game(cid, gid): return
-            g = games
-            g = {}
-            for uid, p in g.items():
-                if p: g = 1
-        start_night(cid, gid)
-        return
+            g = games[cid]
+            avail = [u for u, p in g["players"].items() if p["alive"] and u not in g["asked_uids"]]
+            
+            if not avail: 
+                show_vote_game_end(cid, gid)
+                return
+            
+            asker = random.choice(avail)
+            g["asker"] = asker
+            g["asked_uids"].add(asker)
+            g["phase"] = "waiting_q"
+            g["ask_type_chosen"] = False
+            g["vote_question"] = None
+            g["qa_answers"] = {}
+            g["vote_game_votes"] = {}
+            g["qa_answer_pending"] = set([u for u, p in g["players"].items() if p["alive"] and u != asker])
+            
+            g["round"] += 1
+            rnd = g["round"]
+            asker_name = g["players"][asker]["name"]
 
+        silence_all(cid)
+        mk = types.InlineKeyboardMarkup()
+        mk.add(types.InlineKeyboardButton("🎤 اعتلاء المنصة", url=f"https://t.me/{BOT_USERNAME}?start=ask_{cid}"))
+        safe_send(cid, f"⚖️ <b>الجولة {rnd}</b>\n\nالكلمة الآن للمتحدث: <b>{asker_name}</b>\nولديه {VOTE_GAME_ASK_TIME} ثانية لطرح قضيته.", reply_markup=mk)
+        
+        # انتظار سؤال المتحدث
+        t_end = time.time() + VOTE_GAME_ASK_TIME
+        got_q = False
+        while time.time() < t_end:
+            time.sleep(1)
+            with bot_lock:
+                if not valid_game(cid, gid): return
+                if games[cid]["phase"] not in ("waiting_q",): 
+                    got_q = True
+                    break
+        
+        if not got_q:
+            safe_send(cid, "⏰ <b>انتهى الوقت!</b>\nالمتحدث ارتبك ولم ينطق بكلمة. ننتقل للمتحدث التالي.")
+            continue
+            
+        with bot_lock:
+            phase = games[cid]["phase"]
+            
+        if phase == "voting_active":
+            if not safe_sleep(cid, gid, VOTE_GAME_VOTE_TIME): return
+            _tally_vote_round(cid, rnd, gid)
+        elif phase == "answering":
+            if not safe_sleep(cid, gid, VOTE_GAME_ANSWER_TIME): return
+            _show_qa_round(cid, rnd, gid)
+        
+        if not safe_sleep(cid, gid, 5): return
+
+def send_vote_q(cid, asker_id, text):
     with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        g = "room_choosing"
-        g = {}
-        g = set()
-        g = time.time()
-
-    silence_all(cid)
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🏠 حدد مخبأك", url=f"https://t.me/{BOT_USERNAME}?start=room_{cid}"))
-    safe_send(cid, f"🏠 <b>حان وقت المبيت...</b>\n\nحدد مكان اختبائك الليلة عبر اللوحة أدناه.\n\n<i>معكم {ROOM_CHOOSE_TIME} ثانية لاتخاذ القرار</i>", reply_markup=mk)
-
-    if not safe_sleep(cid, gid, ROOM_CHOOSE_TIME): return
-
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        for uid, p in g.items():
-            if p and uid not in g:
-                g = random.randint(1, 5)
-
-    notify_room_mates(cid, gid)
-    if not safe_sleep(cid, gid, 2): return
-    start_night(cid, gid)
-
-def dispatch_room(uid, param):
-    try: cid = int(param.replace("room_", ""))
-    except: return
-    with bot_lock:
-        if cid not in games: return safe_pm(uid, "🚫 اللعبة لم تعد متاحة.")
-        g = games
-        if uid not in g or not g: return safe_pm(uid, "🚫 أنت لست جزءاً من هذه الجولة.")
-        if g != "room_choosing": return safe_pm(uid, "⏰ لقد نفد وقت الاختيار.")
-        if uid in g: return safe_pm(uid, f"✅ لقد حجزت مكانك بالفعل.")
-
+        g = games[cid]
+        alive = get_alive(cid)
+        asker_name = g["players"][asker_id]["name"]
+    
     mk = types.InlineKeyboardMarkup(row_width=2)
-    for rid, rname in ROOM_NAMES.items():
-        mk.add(types.InlineKeyboardButton(rname, callback_data=f"pickroom_{cid}_{rid}"))
-    safe_pm(uid, "🏠 <b>أين ستختبئ الليلة؟</b>\n\n📌 <b>الغرف العادية:</b> مكان آمن نسبياً، يمكنك التحدث واستخدام قدرتك فقط مع من يشاركك نفس الغرفة.\n\n📌 <b>الممر المظلم:</b> مكان مكشوف وخطير. يمكنك استهداف أي شخص في المستشفى، لكن الجميع يمكنهم استهدافك أيضاً!", reply_markup=mk)
+    for u, p in alive.items():
+        mk.add(types.InlineKeyboardButton(p["name"], callback_data=f"vgvote_{cid}_{u}"))
+    
+    safe_send(cid, f"⚖️ <b>تصويت مباشر من {asker_name}!</b>\n\n❓ <b>القضية المطروحة:</b>\n« {text} »\n\n<i>⏳ أمامكم {VOTE_GAME_VOTE_TIME} ثانية للإدلاء بأصواتكم في الأسفل.</i>", reply_markup=mk)
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("pickroom_"))
-def cb_pickroom(call):
+def send_qa_q(cid, asker_id, text):
+    with bot_lock:
+        asker_name = games[cid]["players"][asker_id]["name"]
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("✍️ تقديم حجة (في الخاص)", url=f"https://t.me/{BOT_USERNAME}?start=qa_{cid}"))
+    safe_send(cid, f"💬 <b>جلسة نقاش يطرحها {asker_name}!</b>\n\n❓ <b>الموضوع:</b>\n« {text} »\n\n<i>⏳ أمامكم {VOTE_GAME_ANSWER_TIME} ثانية. انتقلوا للخاص لتقديم حججكم (بأسمائكم أو كمجهولين).</i>", reply_markup=mk)
+
+def _tally_vote_round(cid, rnd, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        votes = g.get("vote_game_votes", {})
+        question = g.get("vote_question", "بدون سؤال")
+    
+    if not votes: 
+        safe_send(cid, "🤷 <b>لم يشارك أحد في التصويت!</b>\nمرت الجولة بصمت.")
+    else:
+        counts = {}
+        for v_uid, t_uid in votes.items(): 
+            counts[t_uid] = counts.get(t_uid, 0) + 1
+        
+        res = []
+        for t_uid, c in sorted(counts.items(), key=lambda x: x[1], reverse=True):
+            t_name = g["players"][t_uid]["name"]
+            res.append(f"▫️ <b>{t_name}</b> حصل على {c} أصوات")
+        
+        txt = f"📊 <b>نتائج التصويت (الجولة {rnd})</b>\n\n❓ <b>السؤال كان:</b> {question}\n\n" + "\n".join(res)
+        safe_send(cid, txt)
+        
+def _show_qa_round(cid, rnd, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        ans = g.get("qa_answers", {})
+        q = g.get("vote_question", "")
+    
+    txt = f"💬 <b>استعراض الحجج (الجولة {rnd})</b>\n\n❓ <b>الموضوع:</b> {q}\n\n"
+    if not ans:
+        txt += "<i>صمت مطبق... لم يجرؤ أحد على تقديم حجة.</i>"
+    else:
+        for uid, data in ans.items():
+            name = g["players"][uid]["name"] if data.get("reveal") else "🎭 مجهول"
+            txt += f"🔹 <b>{name} يقول:</b>\n« {data['text']} »\n\n"
+    
+    safe_send(cid, txt)
+
+def show_vote_game_end(cid, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        for u, p in g["players"].items():
+            prof = get_profile(u)
+            wall = get_wallet(u)
+            prof["games"] += 1
+            wall["coins"] += 70 # مكافأة مجلس التصويت
+    
+    safe_send(cid, "🏛 <b>تم رفع الجلسة!</b>\n\nانتهت جميع الجولات وقال الجميع كلمتهم بجرأة.\n\n💰 <i>تم توزيع 70 عملة لجميع المشاركين كجائزة لحضور المجلس.</i>")
+    force_cleanup(cid)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("asktype_"))
+def cb_asktype(call):
     uid = call.from_user.id
-    try: parts = call.data.split("_"); cid, rid = int(parts), int(parts)
+    try: parts = call.data.split("_"); cid, typ = int(parts[1]), parts[2]
     except: return
     with bot_lock:
         if cid not in games: return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        g = games
-        if g != "room_choosing": return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        if uid not in g or not g: return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if uid in g: return bot.answer_callback_query(call.id, "✅", show_alert=True)
-        g = rid
-    bot.answer_callback_query(call.id, f"✅ توجهت إلى {ROOM_NAMES}")
-    try: bot.edit_message_text(f"✅ تم تأمين موقعك في: <b>{ROOM_NAMES}</b>\nانتظر حلول الظلام...", uid, call.message.message_id, parse_mode="HTML")
+        g = games[cid]
+        if g.get("asker") != uid or g["phase"] != "waiting_q": return bot.answer_callback_query(call.id, "⏰ انتهى وقتك للمنصة", show_alert=True)
+        g["ask_type"] = typ
+        g["ask_type_chosen"] = True
+    
+    bot.answer_callback_query(call.id, "✅ تم اختيار النمط")
+    try: bot.edit_message_text("✍️ <b>الآن... اكتب سؤالك أو موضوع النقاش في رسالة واحدة وأرسله هنا:</b>", uid, call.message.message_id, parse_mode="HTML")
     except: pass
 
-def notify_room_mates(cid, gid):
+@bot.callback_query_handler(func=lambda c: c.data.startswith("vgvote_"))
+def cb_vgvote(call):
+    uid = call.from_user.id
+    try: parts = call.data.split("_"); cid, tid = int(parts[1]), int(parts[2])
+    except: return
     with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        for rid in ROOM_NAMES:
-            players_in = get_room_players(g, rid)
-            for uid in players_in:
-                others = [pname(u, p) for u, p in players_in.items() if u != uid]
-                txt = f"🚪 <b>أنت الآن في {ROOM_NAMES}</b>\n\nيشاركك المكان:\n" + "\n".join(others) if others else f"🚪 <b>أنت الآن في {ROOM_NAMES}</b>\n\nيبدو أنك وحدك هنا..."
-                safe_pm(uid, txt)
+        if cid not in games or games[cid]["phase"] != "voting_active": return bot.answer_callback_query(call.id, "⏰ التصويت مغلق.", show_alert=True)
+        g = games[cid]
+        if uid not in g["players"]: return bot.answer_callback_query(call.id, "❌", show_alert=True)
+        g["vote_game_votes"][uid] = tid
+    bot.answer_callback_query(call.id, "✅ تم تسجيل صوتك للمجلس", show_alert=False)
 
-# ══════════════ الليل ══════════════
-def start_night(cid, expected_gid):
-    auto_send =[]
+@bot.callback_query_handler(func=lambda c: c.data.startswith("reveal_"))
+def cb_reveal(call):
+    uid = call.from_user.id
+    try: parts = call.data.split("_"); cid, ch = int(parts[1]), parts[3]
+    except: return
     with bot_lock:
-        if not valid_game(cid, expected_gid): return
-        g = games
-        g = "night"
-        g = {}
-        g += 1
-        g = {}
-        g = {}
-        g = {}
-        g = {}
-        g = {}
-        g = set()
-        g = set()
-        g = {}
-        g = {}
-        g = {}
-        g = {}
-        g = set()
-        g = time.time()
-        rnd = g
-        gid = g
-        for uid, p in g.items():
-            if not p: continue
-            if p in INSTANT_ROLES: auto_send.append((uid, p))
-
-    silence_all(cid)
-    with bot_lock:
-        if valid_game(cid, gid):
-            for mid in list(games.get("pinned_mids",[])): safe_unpin(cid, mid)
-            games =[]
-
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🌑 التحرك في الظلام", url=f"https://t.me/{BOT_USERNAME}?start=night_{cid}"))
-    try:
-        try:
-            bot.send_photo(cid, ASSETS, caption=f"🌑 <b>الليلة {rnd}</b>\n\nاستخدم اللوحة أدناه لاتخاذ قراراتك.\n<i>معكم {NIGHT_TIME} ثانية</i>", parse_mode="HTML", reply_markup=mk)
-        except:
-            safe_send(cid, f"🌑 <b>الليلة {rnd}</b>\n\nاستخدم اللوحة أدناه لاتخاذ قراراتك.\n<i>معكم {NIGHT_TIME} ثانية</i>", reply_markup=mk)
+        if cid not in games or games[cid]["phase"] != "answering": return
+        g = games[cid]
+        if uid not in g.get("qa_answers", {}): return
+        g["qa_answers"][uid]["reveal"] = (ch == "y")
+    bot.answer_callback_query(call.id, "✅ تم حفظ التفضيل")
+    try: bot.edit_message_text(f"✅ تم تأكيد النشر كـ: <b>{'باسمك الحقيقي' if ch == 'y' else 'شخص مجهول'}</b>", uid, call.message.message_id, parse_mode="HTML")
     except: pass
 
-    for uid, role in auto_send: send_night_action(cid, uid, role)
-    if not safe_sleep(cid, gid, NIGHT_TIME): return
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        if games != rnd or games != "night": return
-    resolve_night(cid, rnd, gid)
-
-def dispatch_night(uid, param):
-    try: cid = int(param.replace("night_", ""))
-    except: return
-    with bot_lock:
-        if cid not in games: return safe_pm(uid, "🚫 انتهت اللعبة.")
-        g = games
-        if uid not in g: return safe_pm(uid, "🚫 لست مشاركاً.")
-        if not g: return safe_pm(uid, "💀 كيف لروح أن تتحرك؟ أنت ميت.")
-        if g != "night": return safe_pm(uid, "☀️ انتظر حتى يحل الظلام.")
-        if uid in g.get("night_acted", set()): return safe_pm(uid, "✅ لقد أنهيت تحركاتك لهذه الليلة.")
-        if uid in g: return safe_pm(uid, "💉 جسدك مخدر بالكامل... لا تستطيع التحرك.")
-        
-        role = g
-        
-        # ⚠️ حظر الليلة الأولى لأي دور عدا الجراح، الطبيب، والمجنون
-        if g == 1 and role not in:
-            return safe_pm(uid, "⏳ <b>قدرتك قيد التجهيز...</b>\nستتمكن من استخدامها ابتداءً من الليلة الثانية. راقب بصمت.")
-
-        if role == "Screamer": return safe_pm(uid, "😱 <b>أنت المرعوب!</b>\nليس لديك تدخل يدوي. إذا اقترب منك أي شخص الليلة (غير الجراح)، ستصرخ باسمه تلقائياً ليسمعه الجميع!")
-        
-        # ⚠️ قفل تعافي المريض
-        if uid in g.get("ability_night", {}):
-            an = g
-            if g < an:
-                return safe_pm(uid, f"🔒 جسدك لا يزال يتعافى بعد أخذ الهوية الجديدة... قدرتك ستتفعل في الليلة {an}.")
-
-        if role == "Anesthetist" and g.get(uid, 0) <= 0: return safe_pm(uid, "💉 لقد نفدت كل حقن التخدير لديك.")
-        if role == "Nurse" and not g.get(uid, True): return safe_pm(uid, "💊 لقد استخدمت حقنة السم مسبقاً.")
-        if role == "Patient":
-            if uid in g.get("patient_used", set()): return safe_pm(uid, "🚫 لقد تقمصت دوراً بالفعل.")
-            dead =.items() if not p and u != uid]
-            if not dead: return safe_pm(uid, "🚫 لا توجد جثث لتقمص هويتها بعد.")
-
-    send_night_action(cid, uid, role)
-
-def send_night_action(cid, uid, role):
-    with bot_lock:
-        if cid not in games: return
-        g = games
-        
-    # ⚠️ تخصيص المجنون لتجهيز القنبلة
-    if role == "Psychopath":
-        with bot_lock:
-            bomb_set = g
-        if not bomb_set:
-            with bot_lock:
-                g = "q"
-            safe_pm(uid, "🤡 <b>حان وقت الجنون!</b>\n\nأرسل لي الآن 'اللغز' أو 'السؤال' الذي سيكون شفرة قنبلتك (اكتبه في رسالة عادية هنا):")
-        else:
-            safe_pm(uid, "💣 قنبلتك مزروعة وجاهزة. استرح الآن وانتظر الصباح.")
-        return
-
-    def room_btns(prefix, exclude_teams=None):
-        with bot_lock:
-            if cid not in games: return None
-            g = games
-            tgts = get_room_targets(g, uid)
-            if exclude_teams:
-                tgts = {u: p for u, p in tgts.items() if get_original_team(g, u) not in exclude_teams}
-        if not tgts: return None
-        m = types.InlineKeyboardMarkup(row_width=2)
-        m.add(*, callback_data=f"act_{cid}_{t}_{prefix}") for t, p in tgts.items()])
-        return m
-
-    prompts = {
-        "Surgeon": "🔪 <b>حدد الضحية التي سينهيها مشرطك:</b>",
-        "Doctor": "🩺 <b>اختر المريض الذي تريد حمايته الليلة:</b>",
-        "Anesthetist": "💉 <b>اختر من تريد تخديره وشل حركته:</b>",
-        "Observer": "👁 <b>من تريد أن تكشف هويته الحقيقية؟</b>",
-        "Instigator": "🧠 <b>حدد من ستسرق صوته للتصويت غداً:</b>",
-        "Swapper": "🛏 <b>اختر الطرف الأول لتبديل مكانه:</b>",
-        "Nurse": "💊 <b>لمن ستعطي حقنة السم القاتلة؟ (انتبه للون فريقك)</b>",
-        "Security": "👮 <b>حدد المشتبه به لتصفيته (رصاصة واحدة):</b>",
-    }
-
-    if role == "Security":
-        with bot_lock:
-            if cid not in games: return
-            ammo = games.get(uid, 0)
-        if ammo <= 0: return safe_pm(uid, "🚫 مسدسك فارغ.")
-        
-        mk = room_btns("security")
-        if not mk: return safe_pm(uid, "🚫 لا يوجد أهداف قريبة منك.")
-        safe_pm(uid, f"👮 <b>بندقيتك مجهزة برصاصة واحدة. لا تتردد.</b>\n\n<i>تلميح: يمكنك إرسال الأمر /كشف_الكاميرات لترى آخر من تم الكشف عنه.</i>", reply_markup=mk)
-        return
-
-    if role == "Patient":
-        with bot_lock:
-            if cid not in games: return
-            dead =.items() if not p and u != uid and p != "Patient"]
-        mk = types.InlineKeyboardMarkup(row_width=2)
-        mk.add(*} ({ROLE_DISPLAY.get(p, '?')})", callback_data=f"act_{cid}_{u}_patient") for u, p in dead])
-        safe_pm(uid, "🤕 <b>أمامك الجثث... اختر واحدة لتتقمص دورها:</b>", reply_markup=mk)
-        return
-
-    if role == "Swapper":
-        with bot_lock:
-            if cid not in games: return
-            tgts = get_alive_except(cid, uid)
-        mk = types.InlineKeyboardMarkup(row_width=2)
-        mk.add(*, callback_data=f"act_{cid}_{t}_swapper") for t, p in tgts.items()])
-        safe_pm(uid, prompts, reply_markup=mk)
-        return
-
-    mk = None
-    if role in prompts:
-        key = ROLE_ACTION_MAP.get(role, role.lower())
-        ex = {"evil"} if role in ("Surgeon", "Anesthetist") else None
-        mk = room_btns(key, exclude_teams=ex)
-        
-    if not mk: safe_pm(uid, "🚫 السكون يعم المكان... لا أهداف في نطاقك الليلة.")
-    else: safe_pm(uid, prompts, reply_markup=mk)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("act_"))
-def cb_act(call):
-    uid = call.from_user.id
-    try: parts = call.data.split("_"); cid, tid, act = int(parts), int(parts), parts
-    except: return
-
-    send_swapper2 = False
-    with bot_lock:
-        if cid not in games or games != "night": return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        g = games
-        pp = g
-        if uid not in pp or not pp: return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if uid in g.get("night_acted", set()) and act != "swapper2": return bot.answer_callback_query(call.id, "✅", show_alert=True)
-
-        role_emoji_map = {
-            "surgeon": "🔪 حركة سريعة ومميتة في الظلام...",
-            "doctor": "🩺 خطوات حذرة في أروقة المستشفى...",
-            "anesthetist": "💉 يتم تحضير إبرة التخدير بهدوء...",
-            "nurse": "💊 رائحة الدواء تفوح في الأرجاء...",
-        }
-        if act in role_emoji_map:
-            safe_send(cid, f"<i>{role_emoji_map}</i>")
-
-        if act == "surgeon":
-            g = tid
-            g.setdefault(tid, []).append(uid)
-        elif act == "doctor":
-            g = tid
-            g.setdefault(tid,[]).append(uid)
-        elif act == "anesthetist":
-            g.add(tid)
-            g = g.get(uid, 0) - 1
-            g.setdefault(tid,[]).append(uid)
-        elif act == "instigator": g = tid
-        elif act == "observer":
-            g = tid
-            g.setdefault(tid,[]).append(uid)
-        elif act == "swapper":
-            g = {"first": tid}
-            send_swapper2 = True
-        elif act == "swapper2":
-            g = tid
-            g.setdefault(tid, []).append(uid)
-            g.setdefault(g,[]).append(uid)
-        elif act == "nurse":
-            g = tid
-            g.setdefault(tid, []).append(uid)
-        elif act == "security":
-            g = tid
-            g = 0
-            g.setdefault(tid,[]).append(uid)
-        elif act == "patient":
-            dr = pp
-            g = get_original_team(g, uid)
-            pp = dr
-            g.add(uid)
-            # إعطاء تعافي لليلة واحدة
-            g = g + 1
-            if dr == "Nurse": g = True
-            if dr == "Anesthetist": g = 2; g = "evil"; g.add(uid); g.add(uid)
-            if dr == "Surgeon": g = uid; g.add(uid); g = "evil"; g.add(uid)
-            if dr == "Security": g = 1
-
-        if act != "swapper":
-            g.add(uid)
-            g.add(uid)
-
-    if send_swapper2:
-        with bot_lock: tgts = get_alive_except(cid, uid)
-        mk = types.InlineKeyboardMarkup(row_width=2)
-        mk.add(*, callback_data=f"act_{cid}_{u}_swapper2") for u, p in tgts.items() if u != tid])
-        try: bot.edit_message_text("🛏 <b>اختر الطرف الثاني لإتمام التبديل:</b>", uid, call.message.message_id, parse_mode="HTML", reply_markup=mk)
-        except: pass
-        return
-
-    bot.answer_callback_query(call.id, "✅")
-    
-    # رسالة خاصة للمريض
-    if act == "patient":
-        try: bot.edit_message_text(f"💉 <b>تمت العملية بنجاح!</b>\n\nلقد استوليت على هوية ({ROLE_DISPLAY}).\n⏳ ستتفعل قدراتك الجديدة ابتداءً من الليلة القادمة.", uid, call.message.message_id, parse_mode="HTML")
-        except: pass
-    else:
-        try: bot.edit_message_text("✅ <b>تم اتخاذ القرار. تراجع في الظلام وانتظر الصباح.</b>", uid, call.message.message_id, parse_mode="HTML")
-        except: pass
-
-# ══════════════ الجوكر ══════════════
-def assign_joker(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        alive =.items() if p]
-        if not alive: return
-        holder = random.choice(alive)
-        g = holder
-        g = False
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🃏 استخدام البطاقة", url=f"https://t.me/{BOT_USERNAME}?start=joker_{cid}"))
-    safe_pm(holder, "🃏 <b>لقد وقعت بطاقة الجوكر في يدك!</b>\n\nتمنحك قدرة استثنائية لمرة واحدة فقط. استخدمها بحذر.", reply_markup=mk)
-
-def dispatch_joker(uid, param):
-    try: cid = int(param.replace("joker_", ""))
-    except: return
-    with bot_lock:
-        if cid not in games: return
-        g = games
-        if g.get("joker_holder") != uid or g.get("joker_used"): return safe_pm(uid, "🚫 البطاقة مستخدمة أو أنها لم تعد بحوزتك.")
-    
-    mk = types.InlineKeyboardMarkup(row_width=1)
-    for k, v in JOKER_OPTIONS.items():
-        mk.add(types.InlineKeyboardButton(v, callback_data=f"jkuse_{cid}_{k}"))
-    safe_pm(uid, "🃏 <b>ما هي الورقة التي ستلعبها؟</b>\n\n⚠️ <i>ملاحظة: استخدام الجوكر سيكشف هويتك الحقيقية أمام الجميع!</i>", reply_markup=mk)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("jkuse_"))
-def cb_joker_use(call):
-    uid = call.from_user.id
-    try: parts = call.data.split("_"); cid, jk = int(parts), parts
-    except: return
-    with bot_lock:
-        if cid not in games: return
-        g = games
-        if g.get("joker_holder") != uid or g.get("joker_used"): return
-        g = True
-        g = jk
-        pn = g
-        pr = ROLE_DISPLAY.get(g, "?")
-    
-    bot.answer_callback_query(call.id, "🃏")
-    safe_send(cid, f"🃏 <b>مفاجأة الجوكر!</b>\n\nاللاعب {pname(uid, pn)} ألقى ببطاقته واستخدم مهارة <b>{JOKER_OPTIONS}</b>\n\nهويته الحقيقية هي: {pr}")
-
-    if jk == "cancel_vote" and g == "voting":
-        g = {}
-        safe_send(cid, "🔄 تم إبطال جميع الأصوات الحالية!")
-    elif jk == "skip_night" and g == "night":
-        g = {}
-        g = set(g.keys())
-        safe_send(cid, "⏭ الظلام ينقشع مبكراً... تم تخطي الليلة دون أي أحداث!")
-
-# ══════════════ معالجة الليل ══════════════
-def resolve_night(cid, expected_rnd, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid): return
-        g = games
-        if g != expected_rnd or g != "night": return
-        g = "morning"
-        pp = g
-        actions = g
-        sedated = g
-        
-        swaps = {}
-        for uid, d in g.items():
-            if uid not in sedated and "second" in d:
-                a, b = d, d
-                if pp.get(a, {}).get("alive") and pp.get(b, {}).get("alive"):
-                    swaps = b; swaps = a
-        def sw(t): return swaps.get(t, t) if t else t
-
-        s_uid = g.get("surgeon_uid")
-        s_tgt = None
-        if s_uid and pp and s_uid not in sedated:
-            raw_tgt = actions.get("surgeon")
-            if raw_tgt: s_tgt = sw(raw_tgt)
-
-        sec_tgt = None
-        sec_uid = next((u for u, p in pp.items() if p=="Security" and p), None)
-        if sec_uid and sec_uid not in sedated:
-            raw_sec = actions.get("security")
-            if raw_sec: sec_tgt = sw(raw_sec)
-
-        d_uid = next((u for u, p in pp.items() if p=="Doctor" and p), None)
-        d_tgt = None
-        d_failed = False
-        if d_uid and d_uid not in sedated:
-            raw_d = actions.get("doctor")
-            if raw_d:
-                d_tgt = sw(raw_d)
-                if random.random() < DOCTOR_FAIL_CHANCE: d_failed = True
-
-        victim = None
-        saved = False
-        
-        if s_tgt and s_tgt in pp and pp:
-            if d_tgt == s_tgt and not d_failed: saved = True
-            elif has_item(s_tgt, "shield"):
-                use_item(s_tgt, "shield")
-                saved = True
-            else: victim = s_tgt
-
-        sec_victim = None
-        sec_died_guilt = False
-        if sec_tgt and sec_tgt in pp and pp:
-            if sec_tgt != victim:
-                if d_tgt == sec_tgt and not d_failed: saved = True
-                else:
-                    sec_victim = sec_tgt
-                    if get_original_team(g, sec_victim) == "good":
-                        sec_died_guilt = True
-
-        nurse_kills = []
-        for n, t in g.items():
-            if n not in sedated and pp:
-                t_real = sw(t)
-                if t_real in pp and pp:
-                    nk_innocent = False
-                    if get_original_team(g, t_real) not in ("evil", "psycho"):
-                        nk_innocent = True
-                    nurse_kills.append({"victim": t_real, "killer": n, "suicide": nk_innocent})
-
-    try: bot.send_photo(cid, ASSETS, caption="🌅 <b>تشرق الشمس على المستشفى...</b>", parse_mode="HTML")
-    except: safe_send(cid, "🌅 <b>تشرق الشمس على المستشفى...</b>")
-    
-    if not safe_sleep(cid, expected_gid, 2): return
-
-    if d_failed and d_tgt:
-        with bot_lock: kill_player(g, d_tgt)
-        safe_send(cid, f"💉💀 <b>{pname(d_tgt, pp)}</b> فارق الحياة إثر خطأ طبي في الجرعة!")
-        with bot_lock: transfer_radio(g, d_tgt)
-    
-    if saved:
-        safe_send(cid, "✨ <b>المعجزة تحققت... أحدهم نجا من الموت المحتم الليلة الماضية.</b>")
-    
-    if victim:
-        with bot_lock: kill_player(g, victim)
-        safe_send(cid, f"🔪💀 <b>{pname(victim, pp)}</b> وُجد ممزقاً بمشرط الجراح.\n\n🎭 بطاقته الملطخة بالدماء تشير إلى: {ROLE_DISPLAY.get(pp, '?')}")
-        with bot_lock: transfer_radio(g, victim, s_uid)
-        with bot_lock: g = True
-        safe_pm(victim, f"🩸 <b>لديك {LAST_GASP_TIME} ثانية لكتابة كلماتك الأخيرة التي ستُقرأ على الجميع.</b>\n\n(اكتب ما شئت)")
-        safe_sleep(cid, expected_gid, LAST_GASP_TIME)
-        with bot_lock: txt = g.get(victim)
-        if txt: safe_send(cid, f"🩸 <i>كلمات {pp} الأخيرة:</i>\n\n{txt}")
-
-    if sec_victim:
-        with bot_lock: kill_player(g, sec_victim)
-        safe_send(cid, f"🔫💀 <b>{pname(sec_victim, pp)}</b> سقط برصاص حارس الأمن.\n\n🎭 هويته الحقيقية: ||{ROLE_DISPLAY.get(pp, '?')}||")
-        with bot_lock: transfer_radio(g, sec_victim, sec_uid)
-        
-        if sec_died_guilt:
-            safe_sleep(cid, expected_gid, 2)
-            with bot_lock: kill_player(g, sec_uid)
-            safe_send(cid, f"🔥💀 <b>{pname(sec_uid, pp)}</b> (حارس الأمن) أدرك أنه قتل بريئاً... وألقى بنفسه في المحرقة ندماً.\n\n🎭 كان: ||{ROLE_DISPLAY.get(pp, '?')}||")
-            with bot_lock: transfer_radio(g, sec_uid)
-
-    for nk in nurse_kills:
-        vic = nk
-        nur = nk
-        if pp:
-            with bot_lock: kill_player(g, vic)
-            safe_send(cid, f"💊💀 <b>{pname(vic, pp)}</b> لفظ أنفاسه الأخيرة إثر حقنة مسمومة.\n\n🎭 هويته: ||{ROLE_DISPLAY.get(pp, '?')}||")
-            with bot_lock: transfer_radio(g, vic, nur)
-            
-            if nk and pp:
-                safe_sleep(cid, expected_gid, 2)
-                with bot_lock: kill_player(g, nur)
-                safe_send(cid, f"🧪💀 <b>{pname(nur, pp)}</b> (الممرض) اكتشف خطأه القاتل وشرب السم ليلحق بضحيته.\n\n🎭 كان: ||{ROLE_DISPLAY.get(pp, '?')}||")
-                with bot_lock: transfer_radio(g, nur)
-
-    if check_win_safe(cid, expected_gid): return
-    
-    # ⚠️ صراخ المرعوب العلني
-    for u, vs in g.items():
-        u_real = sw(u)
-        if u_real in pp and pp == "Screamer" and pp and u_real not in sedated:
-            # إذا الجراح قتله هذا الدور، لا يصرخ (الجراح يكتمه)
-            if victim == u_real:
-                continue
-            
-            for v in vs:
-                # الجراح دائماً صامت ولا يسبب صراخ حتى لو لم يمت المرعوب (مثلا طبيب أنقذه)
-                if pp == "Surgeon": continue
-                
-                visitor_name = pp
-                screamer_name = pp
-                safe_send(cid, f"😱 <b>صراخ يمزق السكون!</b>\nاللاعب {pname(u_real, screamer_name)} يصرخ بهستيريا: <i>\"النجدة! {visitor_name} كان يتجول حول سريري!!\"</i>")
-
-    # رسائل الكشف (المراقب)
-    for u, t in g.items():
-        if u not in sedated and pp.get(u, {}).get("alive"):
-            t_real = sw(t)
-            if t_real in pp:
-                role_name = ROLE_DISPLAY.get(pp, '?')
-                safe_pm(u, f"👁 <b>الرؤية تتضح:</b> اللاعب {pp} يخفي خلفه دور: {role_name}")
-                with bot_lock: g = role_name 
-
-    # AFK
-    afk_kills, _ = check_afk(cid)
-    for ak in afk_kills:
-        safe_send(cid, f"💔 <b>{pp}</b> لم يتحمل الضغط ومات بسكتة قلبية من الرعب (عدم التفاعل).")
-        with bot_lock: transfer_radio(g, ak)
-
-    if check_win_safe(cid, expected_gid): return
-    
-    _try_promote_anesthetist(cid, expected_gid)
-    do_medical_drop(cid, expected_gid)
-    
-    start_discussion(cid, expected_gid)
-
-def _try_promote_anesthetist(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        surg_alive = any(p == "Surgeon" and p for p in g.values())
-        if not surg_alive:
-            for u, p in g.items():
-                if p == "Anesthetist" and p:
-                    p = "Surgeon"
-                    g = u
-                    safe_pm(u, "🔪 <b>لقد سقط الجراح السابق... المشرط الآن في يدك. أنت الجراح الجديد!</b>")
-                    break
-
-# ══════════════ النقاش والتصويت ══════════════
-def start_discussion(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        games = "discussion"
-        alive = len(get_alive(cid))
-    
-    open_discussion(cid)
-    safe_send(cid, f"💬 <b>وقت تبادل الاتهامات ({DISCUSS_TIME}ث)</b>\n\n👥 الأحياء المتبقون: {alive}\n\nتبادلوا الشكوك بحرية. من لديه شيء ليخفيه؟")
-    
-    if not safe_sleep(cid, gid, DISCUSS_TIME): return
-    show_suspect_bar(cid)
-    if not safe_sleep(cid, gid, 2): return
-    start_voting(cid, gid)
-
-def start_voting(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        games = "voting"
-        games = {}
-    
-    silence_all(cid)
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("⚖️ التصويت للإعدام", url=f"https://t.me/{BOT_USERNAME}?start=v_{cid}"))
-    msg = safe_send(cid, f"⚖️ <b>المحاكمة تبدأ ({VOTE_TIME}ث)</b>\n\nمن سيلقى حتفه اليوم؟", reply_markup=mk)
-    if msg:
-        safe_pin(cid, msg.message_id)
-        with bot_lock: games.append(msg.message_id)
-    
-    if not safe_sleep(cid, gid, VOTE_TIME): return
-    tally_trial(cid, gid)
-
-def tally_trial(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        votes = g
-        valid_votes = {k: v for k, v in votes.items() if isinstance(k, int) and k in g and g}
-        
-    safe_unpin_all(cid)
-    if not valid_votes:
-        safe_send(cid, "🤷 <b>الصمت يعم... لم يتم توجيه تهمة لأي شخص.</b>")
-        return start_room_choosing(cid, gid)
-
-    counts = {}
-    for t in valid_votes.values(): counts = counts.get(t, 0) + 1
-    top_v = max(counts.values())
-    candidates =
-
-    txt = "📩 <b>صناديق الاقتراع أفرزت التالي:</b>\n\n"
-    for v, t in valid_votes.items():
-        vn = g
-        tn = g
-        txt += f"🔸 {vn} صوّت ضد {tn}\n"
-    safe_send(cid, txt)
-    
-    if len(candidates) == 1:
-        start_defense(cid, gid, candidates)
-    else:
-        safe_send(cid, "🤝 <b>انقسام في الآراء... لا توجد أغلبية، لذا لن يُعدم أحد اليوم.</b>")
-        start_room_choosing(cid, gid)
-
-def start_defense(cid, gid, sus):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        g = "defense"
-        g = sus
-    
-    open_discussion(cid)
-    safe_send(cid, f"🎤 <b>اللاعب {g} في قفص الاتهام!</b>\n\nدافع عن نفسك، وللآخرين حق الرد! ({DEFENSE_TIME}ث).")
-    
-    if not safe_sleep(cid, gid, DEFENSE_TIME): return
-    
-    with bot_lock:
-        g = games
-        g = "confirming"
-        g = {"yes": set(), "no": set()}
-    
-    silence_all(cid)
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🔥 إدانة", callback_data=f"cf_{cid}_y"),
-           types.InlineKeyboardButton("🕊 براءة", callback_data=f"cf_{cid}_n"))
-    safe_send(cid, "⚖️ <b>القرار النهائي للجمهور:</b>", reply_markup=mk)
-    
-    if not safe_sleep(cid, gid, CONFIRM_TIME): return
-    resolve_confirm(cid, gid)
-
-def resolve_confirm(cid, gid):
-    with bot_lock:
-        if not valid_game(cid, gid): return
-        g = games
-        sus = g if g.get("confirm_target") else g.get("defense_target")
-        if not sus: return 
-        yes = len(g)
-        no = len(g)
-        
-    if yes > no:
-        with bot_lock: kill_player(g, sus)
-        pn = g
-        pr = ROLE_DISPLAY.get(g, "?")
-        safe_send(cid, f"🔥 <b>تم تنفيذ حكم الإعدام بحق {pn}.</b>\n\n🎭 اتضح أنه كان: {pr}")
-        with bot_lock: transfer_radio(g, sus)
-        
-        # المجنون
-        if g == "Psychopath":
-            with bot_lock: bomb = g
-            if bomb:
-                safe_send(cid, f"🤡 <b>ضحكة هيستيرية تملأ المكان... المجنون ترك قنبلة قبل موته!</b>\n\n❓ {bomb}\n\nلديك {BOMB_TIME} ثانية لفك الشفرة والنجاة!")
-                open_discussion(cid)
-                with bot_lock: g = "bomb"
-                
-                t_end = time.time() + BOMB_TIME
-                while time.time() < t_end:
-                    time.sleep(1)
-                    with bot_lock:
-                        if g == "defused": break
-                
-                with bot_lock: phase = g
-                if phase == "defused":
-                    d_name = g]
-                    safe_send(cid, f"✅ <b>توقف المؤقت! {d_name} تمكن من إبطال القنبلة بذكاء.</b>")
-                else:
-                    safe_send(cid, f"💥 <b>BOOM! المستشفى انهار فوق رؤوس الجميع.</b>\n\nالجواب الصحيح كان: {bomb}")
-                    with bot_lock: g = "psycho"
-                    show_results(cid, "🤡 جنون تام! المجنون فاز وحده من بين الركام.")
-                    return
-
-        if check_win_safe(cid, gid): return
-    else:
-        safe_send(cid, "🕊 <b>عفو عام... لقد تمت تبرئته بقرار الأغلبية.</b>")
-    
-    start_room_choosing(cid, gid)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("vote_"))
-def cb_vote(call):
-    uid = call.from_user.id
-    try: cid, tid = int(call.data.split("_")), int(call.data.split("_"))
-    except: return
-    with bot_lock:
-        if cid not in games: return bot.answer_callback_query(call.id, "⛔", show_alert=True)
-        g = games
-        if g not in ("voting", "voting_active"): return bot.answer_callback_query(call.id, "⏰", show_alert=True)
-        if uid not in g or not g: return bot.answer_callback_query(call.id, "❌", show_alert=True)
-        if uid in g: return bot.answer_callback_query(call.id, "✅", show_alert=True)
-        g = tid
-        if g == "Instigator": g = tid
-        if g.get("joker_holder") == uid and g.get("joker_effect") == "double_vote": g = tid
-    bot.answer_callback_query(call.id, "✅ سُجل صوتك")
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("cf_"))
-def cb_confirm(call):
-    uid = call.from_user.id
-    try: cid, ch = int(call.data.split("_")), call.data.split("_")
-    except: return
-    with bot_lock:
-        if cid not in games or games != "confirming": return
-        if uid not in games or not games: return
-        if uid == games.get("defense_target"): return bot.answer_callback_query(call.id, "أنت المتهم! لا يحق لك التصويت هنا.", show_alert=True)
-        
-        cv = games
-        cv.discard(uid); cv.discard(uid)
-        if ch == "y": cv.add(uid)
-        else: cv.add(uid)
-        
-        y, n = len(cv), len(cv)
-        
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton(f"🔥 إدانة ({y})", callback_data=f"cf_{cid}_y"),
-           types.InlineKeyboardButton(f"🕊 براءة ({n})", callback_data=f"cf_{cid}_n"))
-    try: bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=mk)
-    except: pass
-    bot.answer_callback_query(call.id, "✅")
-
-@bot.message_handler(func=lambda m: m.chat.type == "private" and m.text and not m.text.startswith("/"))
-def pm_handler_special(msg):
-    uid = msg.from_user.id
-    text = msg.text.strip()
-
-    with bot_lock:
-        fc = find_game_for_user(uid)
-        if not fc or fc not in games: return
-        g = games
-        
-        if g == "night" and g.get(uid, {}).get("alive"):
-            my_room = get_player_room(g, uid)
-            if my_room:
-                my_name = g
-                if my_room == 5:
-                    hall_players = get_room_players(g, 5)
-                    for u in hall_players:
-                        if u != uid: safe_pm(u, f"🌑 <b>{my_name} (من الممر المظلم):</b> {clean(text, 200)}")
-                    corrupted = corrupt_text(text)
-                    all_in_rooms =.items() if p and g.get(u) != 5]
-                    for u in all_in_rooms:
-                        safe_pm(u, f"👻 <b>(صوت خافت قادم من الممر):</b> {clean(corrupted, 200)}")
-                else:
-                    room_mates = get_room_players(g, my_room)
-                    for u in room_mates:
-                        if u != uid: safe_pm(u, f"🏠 <b>{my_name}:</b> {clean(text, 200)}")
-                return
-
-        if g == "Psychopath" and g.get("psycho_phase", {}).get(uid) == "q":
-            g = clean(text, 100); g = "a"
-            safe_pm(uid, "✅ <b>ممتاز!</b>\nالآن أرسل لي 'الجواب الصحيح' بكلمة أو جملة قصيرة لتكتمل الشفرة:"); return
-        if g == "Psychopath" and g.get("psycho_phase", {}).get(uid) == "a":
-            g = normalize_arabic(text); g = clean(text, 50); g = True; g = uid; g = "done"
-            safe_pm(uid, "💣 <b>اكتمل الفخ!</b>\nقنبلتك جاهزة الآن. إذا أقنعتهم بإعدامك نهاراً، ستنفجر في وجوههم."); return
-        if g.get("last_gasp_pending", {}).get(uid):
-            g = clean(text, 3000); g = False
-            safe_pm(uid, "🩸 تم تسطير كلماتك بدمائك."); return
-        if g == "vote" and g == "waiting_q" and g.get("asker") == uid and g.get("ask_type_chosen"):
-            g = clean(text, 200)
-            if g == "vote": g = "voting_active"; send_vote_q(fc, uid, text)
-            else: g = "answering"; send_qa_q(fc, uid, text)
-            safe_pm(uid, "✅ تم عرض سؤالك أمام المجلس."); return
-        if g == "vote" and g == "answering" and uid in g.get("qa_answer_pending", set()):
-            g.remove(uid); g.add(uid)
-            g = {"text": clean(text, 200), "reveal": None}
-            mk = types.InlineKeyboardMarkup(); mk.add(types.InlineKeyboardButton("✅ بإسمي", callback_data=f"reveal_{fc}_y"), types.InlineKeyboardButton("🎭 مجهول", callback_data=f"reveal_{fc}_n"))
-            safe_pm(uid, "✅ تم استلام حجتك. هل تريد عرضها بإسمك أم بشكل مجهول؟", reply_markup=mk); return
-
-@bot.message_handler(commands=, chat_types=)
-def cmd_radio(m):
-    uid = m.from_user.id
-    text = m.text.split(maxsplit=1)
-    if len(text) < 2: return safe_pm(uid, "⚠️ أرسل رسالتك هكذا: /لاسلكي ثم النص")
-    msg_content = text
-    
-    with bot_lock:
-        cid = find_game_for_user(uid)
-        if not cid: return
-        g = games
-        if uid not in g: return safe_pm(uid, "🚫 أنت لا تملك جهاز لاسلكي للاتصال به.")
-        
-        my_role = g
-        my_name = g
-        
-        for holder in g:
-            safe_pm(holder, f"📻 <b>لاسلكي ({my_name}):</b>\n\n{clean(msg_content, 200)}")
-
-@bot.message_handler(commands=, chat_types=)
-def cmd_check_cam(m):
-    uid = m.from_user.id
-    with bot_lock:
-        cid = find_game_for_user(uid)
-        if not cid: return
-        g = games
-        if g != "Security": return safe_pm(uid, "🚫 هذه الميزة متاحة لحارس الأمن فقط.")
-        if uid in g: return safe_pm(uid, "🚫 لقد قمت بالتحقق من التسجيلات لهذه الليلة بالفعل.")
-        
-        last = g.get("observer_last_reveal")
-        g.add(uid)
-        
-        if last: safe_pm(uid, f"📹 <b>تفقد كاميرات المراقبة:</b>\n\nآخر شخص راقبه المراقب (ربما يكون الجراح) يحمل دور: <b>{last}</b>")
-        else: safe_pm(uid, "📹 <b>شاشة الكاميرا سوداء:</b>\n\nيبدو أن المراقب لم يقم بأي نشاط مؤخراً أو أنه ميت.")
-
+# ══════════════ بدء اللعبة والغرف (HOSPITAL) ══════════════
 def start_hospital(cid, expected_gid):
     with bot_lock:
         if not valid_game(cid, expected_gid): return
-        g = games
-        pp = g
+        g = games[cid]
+        
+        mid = g.get("lobby_mid")
+        if mid: delete_msg(cid, mid)
+
+        pp = g["players"]
         if len(pp) < MIN_HOSPITAL:
-            safe_send(cid, f"⚠️ عدد المتواجدين غير كافٍ للبدء ({len(pp)}/{MIN_HOSPITAL}). تم إلغاء الجلسة.")
+            safe_send(cid, f"⚠️ <b>المستشفى فارغ!</b>\nعدد المتواجدين غير كافٍ للبدء ({len(pp)}/{MIN_HOSPITAL}). تم إغلاق الأبواب وإلغاء الجلسة.")
             force_cleanup(cid)
             return
         
@@ -1932,212 +915,720 @@ def start_hospital(cid, expected_gid):
         random.shuffle(uids)
         roles = get_roles_for_count(len(uids))
         for i, uid in enumerate(uids):
-            pp = roles
-            g = ROLE_TEAM.get(roles, "good")
-            if roles == "Anesthetist": g = 2; g.add(uid); g.add(uid)
-            if roles == "Nurse": g = True
-            if roles == "Surgeon": g = uid; g.add(uid); g.add(uid)
-            if roles == "Security": g = 1
+            pp[uid]["role"] = roles[i]
+            if roles[i] == "Security":
+                g["security_ammo"][uid] = 2
+                g["security_mistakes"][uid] = 0
             
-        g = "roles_reveal"
-        g = time.time()
-        gid = g
+        g["phase"] = "roles_reveal"
+        gid = g["game_id"]
 
-    safe_send(cid, "🏥 <b>تم إغلاق أبواب المستشفى وتوزيع المهام...</b>\n\nالظلام يخيّم والقتلة يتجولون الآن.")
+    safe_send(cid, "🏥 <b>تم إغلاق أبواب المستشفى بإحكام...</b>\n\nالظلام يخيّم والقتلة يتجولون الآن بينكم. لا تثق بأحد.")
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("📂 استلام بطاقة الهوية", url=f"https://t.me/{BOT_USERNAME}?start=role_{cid}"))
-    safe_send(cid, "اسحب بطاقتك وتعرف على دورك أدناه 👇", reply_markup=mk)
+    mk.add(types.InlineKeyboardButton("📂 استلام بطاقة الهوية السرية", url=f"https://t.me/{BOT_USERNAME}?start=role_{cid}"))
+    safe_send(cid, "اسحب بطاقتك وتعرف على دورك ومهمتك أدناه 👇", reply_markup=mk)
     
-    if not safe_sleep(cid, gid, 10): return
-    
-    assign_joker(cid, gid)
+    if not safe_sleep(cid, gid, 15): return
     start_room_choosing(cid, gid)
 
-def start_vote_game(cid, expected_gid):
-    with bot_lock:
-        if not valid_game(cid, expected_gid): return
-        g = games
-        if len(g) < MIN_VOTE:
-            safe_send(cid, f"⚠️ العدد غير كافٍ ({len(g)}/{MIN_VOTE}).")
-            force_cleanup(cid)
-            return
-        g = set()
-        g = 0
-        g = time.time()
-        g = set()
-        gid = g
-
-    safe_send(cid, "🗳 <b>بدأت جلسة المجلس! جهزوا حججكم.</b>")
-    if not safe_sleep(cid, gid, 2): return
-    run_vote_round(cid, gid)
-
-def run_vote_round(cid, gid):
-    while True:
-        with bot_lock:
-            if not valid_game(cid, gid): return
-            g = games
-            avail = if u not in g]
-            if not avail: break
-            asker = random.choice(avail)
-            g = asker
-            g.add(asker)
-            g = "waiting_q"
-            g += 1
-            rnd = g
-        
-        silence_all(cid)
-        mk = types.InlineKeyboardMarkup()
-        mk.add(types.InlineKeyboardButton("🎤 استلام المنصة", url=f"https://t.me/{BOT_USERNAME}?start=ask_{cid}"))
-        safe_send(cid, f"🎤 <b>الجولة {rnd}</b>: الكلمة الآن للمتحدث {g}", reply_markup=mk)
-        
-        t_end = time.time() + VOTE_GAME_ASK_TIME
-        got_q = False
-        while time.time() < t_end:
-            time.sleep(1)
-            with bot_lock:
-                if not valid_game(cid, gid): return
-                if g != "waiting_q":
-                    got_q = True
-                    break
-        
-        if not got_q:
-            safe_send(cid, "⏰ انتهى وقت المتحدث ولم يطرح سؤالاً.")
-            continue
-            
-        with bot_lock: p = g
-        if p == "voting_active":
-            if not safe_sleep(cid, gid, VOTE_GAME_VOTE_TIME): return
-            _tally_vote_round(cid, rnd, gid)
-        elif p == "answering":
-            if not safe_sleep(cid, gid, VOTE_GAME_ANSWER_TIME): return
-            _show_qa_round(cid, rnd, gid)
-            
-    show_vote_game_end(cid, gid)
-
-def _tally_vote_round(cid, rnd, gid):
+def start_room_choosing(cid, gid):
     with bot_lock:
         if not valid_game(cid, gid): return
-        votes = games
-    
-    if not votes: safe_send(cid, "🤷 لا توجد أصوات.")
-    else:
-        counts = {}
-        for v in votes.values(): counts = counts.get(v, 0) + 1
-        res =[]
-        for k, v in counts.items():
-            name = games
-            res.append(f"▫️ {name}: {v}")
-        safe_send(cid, "🗳 <b>النتائج النهائية للتصويت:</b>\n\n" + "\n".join(res))
+        g = games[cid]
+        rooms_on = g["rooms_enabled"]
 
-def _show_qa_round(cid, rnd, gid):
+    if not rooms_on:
+        start_night(cid, gid)
+        return
+
+    with bot_lock:
+        games[cid]["phase"] = "room_choosing"
+        games[cid]["room_choices"] = {}
+    
+    silence_all(cid)
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("🏠 التوجه إلى المخبأ", url=f"https://t.me/{BOT_USERNAME}?start=room_{cid}"))
+    safe_send(cid, f"🔔 <b>حان وقت الإغلاق...</b>\n\nكل مريض عليه اختيار مكان اختبائه لهذه الليلة.\n\n<i>⏳ أمامكم {ROOM_CHOOSE_TIME} ثانية</i>", reply_markup=mk)
+
+    if not safe_sleep(cid, gid, ROOM_CHOOSE_TIME): return
+
     with bot_lock:
         if not valid_game(cid, gid): return
-        ans = games
-        q = games
-    
-    txt = f"❓ <b>{q}</b>\n\n"
-    for uid, data in ans.items():
-        name = games if data else "🎭 مجهول"
-        txt += f"🔹 {name}: {data}\n"
-    safe_send(cid, txt)
+        g = games[cid]
+        for uid, p in g["players"].items():
+            if p["alive"] and uid not in g["room_choices"]:
+                g["room_choices"][uid] = 5
 
-def show_vote_game_end(cid, gid):
-    safe_send(cid, "🏁 <b>تم رفع الجلسة وانتهاء اللعبة!</b>")
-    force_cleanup(cid)
+    notify_room_mates(cid, gid)
+    if not safe_sleep(cid, gid, 3): return
+    start_night(cid, gid)
 
-@bot.message_handler(commands=, chat_types=)
-def start_pm(m):
-    try:
-        args = m.text.split()
-        if len(args) > 1:
-            param = args
-            if param.startswith("room_"): dispatch_room(m.from_user.id, param)
-            elif param.startswith("night_"): dispatch_night(m.from_user.id, param)
-            elif param.startswith("joker_"): dispatch_joker(m.from_user.id, param)
-            elif param.startswith("role_"): 
-                cid = int(param.replace("role_", ""))
-                if cid in games and m.from_user.id in games:
-                    role = games
-                    # ⚠️ التعديل الجذري: إرسال دليل مفصل عند أول استلام للدور
-                    guide = ROLE_GUIDE.get(role, f"🎭 دورك: <b>{ROLE_DISPLAY.get(role, role)}</b>")
-                    # رسالة توضيحية قصيرة 
-                    short_guide = ROLE_GUIDE_SHORT.get(role, f"🎭 دورك: <b>{ROLE_DISPLAY.get(role, role)}</b>")
-                    safe_pm(m.from_user.id, short_guide)
-            elif param.startswith("ask_"):
-                cid = int(param.replace("ask_", ""))
-                with bot_lock:
-                    if cid in games and games == m.from_user.id:
-                        mk = types.InlineKeyboardMarkup()
-                        mk.add(types.InlineKeyboardButton("تصويت مباشر", callback_data=f"asktype_{cid}_vote"),
-                               types.InlineKeyboardButton("جلسة نقاش (سؤال وجواب)", callback_data=f"asktype_{cid}_qa"))
-                        safe_pm(m.from_user.id, "كيف ترغب في إدارة جلستك؟", reply_markup=mk)
-            return
-    except: pass
-    safe_pm(m.from_user.id, "🤖 أهلاً بك في عالم الغموض.")
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("asktype_"))
-def cb_asktype(call):
-    uid = call.from_user.id
-    try: parts = call.data.split("_"); cid, typ = int(parts), parts
+def dispatch_room(uid, param):
+    try: cid = int(param.replace("room_", ""))
     except: return
     with bot_lock:
-        if cid not in games: return
-        g = games
-        if g.get("asker") != uid: return
-        g = "vote" if typ == "vote" else "qa"
-        g = True
-    bot.answer_callback_query(call.id, "المنصة لك")
-    try: bot.edit_message_text("✍️ <b>اكتب سؤالك أو موضوع النقاش الآن وإرسله:</b>", uid, call.message.message_id, parse_mode="HTML")
+        if cid not in games: return safe_pm(uid, "🚫 المستشفى تم تدميره.")
+        g = games[cid]
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return safe_pm(uid, "🚫 أنت ميت.")
+        if g["phase"] != "room_choosing": return safe_pm(uid, "⏰ نفد الوقت.")
+        if uid in g["room_choices"]: return safe_pm(uid, "✅ أقفلت الباب بالفعل.")
+
+    mk = types.InlineKeyboardMarkup(row_width=1)
+    for rid, rname in ROOM_NAMES.items():
+        mk.add(types.InlineKeyboardButton(rname, callback_data=f"pickroom_{cid}_{rid}"))
+    safe_pm(uid, "🏠 <b>أين ستختبئ الليلة؟</b>\n\nاختر غرفتك بحذر:", reply_markup=mk)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("pickroom_"))
+def cb_pickroom(call):
+    uid = call.from_user.id
+    try: parts = call.data.split("_"); cid, rid = int(parts[1]), int(parts[2])
+    except: return
+    with bot_lock:
+        if cid not in games: return bot.answer_callback_query(call.id, "❌", show_alert=True)
+        g = games[cid]
+        if g["phase"] != "room_choosing": return bot.answer_callback_query(call.id, "⏰ الوقت انتهى", show_alert=True)
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return bot.answer_callback_query(call.id, "❌", show_alert=True)
+        g["room_choices"][uid] = rid
+    bot.answer_callback_query(call.id, "✅")
+    try: bot.edit_message_text(f"✅ تمركزت في: <b>{ROOM_NAMES[rid]}</b>\n\nانتظر بصمت حتى يحل الظلام...", uid, call.message.message_id, parse_mode="HTML")
     except: pass
 
-@bot.message_handler(func=lambda m: m.chat.type == "private" and m.text and not m.text.startswith("/"))
-def pm_handler_voting_q(m):
-    uid = m.from_user.id
-    text = m.text
+def notify_room_mates(cid, gid):
     with bot_lock:
-        cid = find_game_for_user(uid)
-        if not cid or cid not in games: return
-        g = games
-        if g != "vote": return 
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        for rid in ROOM_NAMES:
+            players_in = get_room_players(g, rid)
+            for uid in players_in:
+                others = [pname(u, p["name"]) for u, p in players_in.items() if u != uid]
+                txt = f"🚪 <b>أنت تختبئ في {ROOM_NAMES[rid]}</b>\n\n"
+                if others: txt += "يشاركك المكان:\n" + "\n".join(others)
+                else: txt += "أنت وحدك هنا... الصمت مخيف."
+                safe_pm(uid, txt)
+
+# ══════════════ الليل والأفعال (HOSPITAL) ══════════════
+def start_night(cid, expected_gid):
+    auto_send = []
+    with bot_lock:
+        if not valid_game(cid, expected_gid): return
+        g = games[cid]
+        g["phase"] = "night"
+        g["round"] += 1
+        g["actions"] = {}
+        g["sedated_current"] = set()
+        g["night_acted"] = set()
+        rnd = g["round"]
+        gid = g["game_id"]
         
-        if g == "waiting_q" and g.get("asker") == uid and g.get("ask_type_chosen"):
-            g = clean(text, 200)
-            if g == "vote": 
-                g = "voting_active"
-                send_vote_q(cid, uid, text)
-            else: 
-                g = "answering"
-                send_qa_q(cid, uid, text)
-            safe_pm(uid, "✅ تم إيصال رسالتك للمجلس.")
-            return
+        for uid, p in g["players"].items():
+            if p["alive"] and p["role"] in INSTANT_ROLES:
+                auto_send.append((uid, p["role"]))
 
-        if g == "answering" and uid in g.get("players") and g:
-            if uid not in g:
-                g = {"text": clean(text, 200), "reveal": True} 
-                safe_pm(uid, "✅ تم تدوين إجابتك.")
-            return
+    silence_all(cid)
 
-def send_vote_q(cid, asker_id, text):
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("🌑 التحرك في الظلام", url=f"https://t.me/{BOT_USERNAME}?start=night_{cid}"))
+    safe_send(cid, f"🌑 <b>حلّ الظلام - الليلة {rnd}</b>\n\nالكاميرات تعطلت والعيون أُغمضت... استخدموا قدراتكم بحذر.\n\n<i>⏳ أمامكم {NIGHT_TIME} ثانية</i>", reply_markup=mk)
+
+    for uid, role in auto_send: send_night_action(cid, uid, role)
+    if not safe_sleep(cid, gid, NIGHT_TIME): return
+    resolve_night(cid, rnd, gid)
+
+def dispatch_night(uid, param):
+    try: cid = int(param.replace("night_", ""))
+    except: return
     with bot_lock:
-        g = games
-        alive =.items() if p]
-    
-    mk = types.InlineKeyboardMarkup()
-    for u in alive:
-        mk.add(types.InlineKeyboardButton(g, callback_data=f"vote_{cid}_{u}"))
-    
-    safe_send(cid, f"❓ <b>موضوع التصويت المطروح:</b>\n\n{text}\n\nأدلوا بأصواتكم الآن!", reply_markup=mk)
+        if cid not in games: return safe_pm(uid, "🚫 اللعبة لم تعد متاحة.")
+        g = games[cid]
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return safe_pm(uid, "💀 كيف لروح أن تتحرك؟ أنت ميت.")
+        if g["phase"] != "night": return safe_pm(uid, "☀️ انتظر حتى يحل الظلام.")
+        if uid in g["night_acted"]: return safe_pm(uid, "✅ لقد أنهيت تحركاتك لهذه الليلة، عُد إلى سريرك.")
+        if uid in g["sedated_current"]: return safe_pm(uid, "💉 جسدك مخدر بالكامل... لا تستطيع تحريك إصبعك.")
+        
+        role = g["players"][uid]["role"]
+        if g["round"] == 1 and role not in INSTANT_ROLES:
+            return safe_pm(uid, "⏳ <b>قدرتك قيد التجهيز...</b>\nستتمكن من استخدامها ابتداءً من الليلة الثانية.")
+        
+    send_night_action(cid, uid, role)
 
-def send_qa_q(cid, asker_id, text):
-    mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("✍️ تقديم حجة", url=f"https://t.me/{BOT_USERNAME}?start=v"))
-    safe_send(cid, f"❓ <b>موضوع النقاش:</b>\n\n{text}\n\nاكتبوا ردودكم وأرسلوها عبر اللوحة أدناه.", reply_markup=mk)
+def send_night_action(cid, uid, role):
+    with bot_lock:
+        if cid not in games: return
+        g = games[cid]
+        
+    if role == "Psychopath":
+        with bot_lock: bomb_set = g["bomb"]["is_set"]
+        if not bomb_set:
+            with bot_lock: g["psycho_phase"][uid] = "q"
+            safe_pm(uid, "🤡 <b>حان وقت الجنون والمرح!</b>\n\nازرع قنبلتك الآن. أرسل لي 'اللغز' أو 'الكلمة الشفرة' (في رسالة عادية هنا):")
+        else:
+            safe_pm(uid, "💣 قنبلتك مزروعة وتكتك بهدوء. انتظر الصباح لتبدأ خطتك.")
+        return
 
-# ══════════════ التشغيل ══════════════
-print("Bot Started...")
+    if role == "Screamer":
+        with bot_lock: used = uid in g["screamer_knife_used"]
+        if used:
+            return safe_pm(uid, "😱 سكينك مكسور ويديك ترتجفان... ليس لديك سوى البقاء في سريرك والارتعاش الليلة.")
+        mk = types.InlineKeyboardMarkup(row_width=1)
+        mk.add(types.InlineKeyboardButton("🔪 استخدام السكين (حماية عمياء)", callback_data=f"act_{cid}_{uid}_screamer_knife"))
+        mk.add(types.InlineKeyboardButton("🛏 الاختباء والارتجاف بصمت", callback_data=f"act_{cid}_{uid}_screamer_hide"))
+        safe_pm(uid, "😱 الخوف ينهش عقلك... لديك سكين حاد. هل ستطعن أي شخص يقترب منك الليلة بدافع الخوف؟ (مرة واحدة فقط للنجاة من أي شخص!)", reply_markup=mk)
+        return
+
+    if role == "Security":
+        with bot_lock: ammo = g["security_ammo"].get(uid, 0)
+        if ammo <= 0: return safe_pm(uid, "🚫 مسدسك فارغ تماماً.")
+
+    if role == "Patient":
+        with bot_lock: dead = [(u, p) for u, p in g["players"].items() if not p["alive"] and p["role"] != "Patient"]
+        if not dead: return safe_pm(uid, "🤕 <b>لا توجد جثث بعد...</b>\nعليك الانتظار حتى تسيل الدماء لكي تسرق هوية أحدهم.")
+        mk = types.InlineKeyboardMarkup(row_width=1)
+        for u, p in dead: mk.add(types.InlineKeyboardButton(f"💀 {p['name']} ({ROLE_DISPLAY.get(p['role'], '?')})", callback_data=f"act_{cid}_{u}_patient"))
+        safe_pm(uid, "🤕 <b>الجثث مكدسة أمامك...</b>\nاختر الجثة التي ستتقمص دورها وتأخذ قدراتها:", reply_markup=mk)
+        return
+
+    def room_btns(prefix, exclude_teams=None):
+        with bot_lock:
+            tgts = get_room_targets(g, uid)
+            if exclude_teams:
+                tgts = {u: p for u, p in tgts.items() if get_original_team(g, u) not in exclude_teams}
+        if not tgts: return None
+        m = types.InlineKeyboardMarkup(row_width=1)
+        for t, p in tgts.items(): m.add(types.InlineKeyboardButton(f"🎯 {p['name']}", callback_data=f"act_{cid}_{t}_{prefix}"))
+        return m
+
+    prompts = {
+        "Surgeon": "🔪 <b>مشرطك متعطش للدماء...</b>\nاختر من ستنهي حياته الليلة:",
+        "Doctor": "🩺 <b>قسم أبقراط يطالبك بالتحرك...</b>\nاختر من ستراقبه وتحميه الليلة:",
+        "Anesthetist": "💉 <b>إبرة التخدير جاهزة...</b>\nاختر من ستشل حركته وتمنعه من استخدام قدرته:",
+        "Observer": "👁 <b>الكاميرات تعمل...</b>\nمن تريد فحص ملفه الطبي السري لتعرف هويته؟",
+        "Instigator": "🧠 <b>التلاعب بالعقول...</b>\nحدد من ستسرق صوته للتصويت في محكمة الغد:",
+        "Swapper": "🛏 <b>ارتباك وخداع...</b>\nاختر الطرف الأول الذي ستنقله من سريره:",
+        "Nurse": "💊 <b>حقنة السم (لمرة واحدة)...</b>\nلمن ستعطيها؟ (احذر قتل الأبرياء):",
+        "Security": "👮 <b>مسدسك المحشو...</b>\nحدد المشتبه به لتصفيته الآن:",
+    }
+
+    key_map = {"Surgeon": "surgeon", "Doctor": "doctor", "Anesthetist": "anesthetist", "Observer": "observer", "Instigator": "instigator", "Swapper": "swapper", "Nurse": "nurse", "Security": "security"}
+    key = key_map.get(role, role.lower())
+    ex = ["evil"] if role in ("Surgeon", "Anesthetist") else None
+    mk = room_btns(key, exclude_teams=ex)
+        
+    if not mk: safe_pm(uid, "🚫 <b>لا يوجد أحد في نطاقك...</b>\nغرفتك معزولة الليلة ولا تستطيع استهداف أحد.")
+    else: safe_pm(uid, prompts.get(role, "اختر هدفك:"), reply_markup=mk)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("act_"))
+def cb_act(call):
+    uid = call.from_user.id
+    try: parts = call.data.split("_"); cid, tid, act = int(parts[1]), int(parts[2]), parts[3]
+    except: return
+
+    send_swapper2 = False
+    with bot_lock:
+        if cid not in games or games[cid]["phase"] != "night": return bot.answer_callback_query(call.id, "⏰ الوقت انتهى.", show_alert=True)
+        g = games[cid]
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return bot.answer_callback_query(call.id, "❌", show_alert=True)
+        if uid in g["night_acted"] and act != "swapper2": return bot.answer_callback_query(call.id, "✅ سبق لك التحرك.", show_alert=True)
+
+        if act == "surgeon": g["actions"]["surgeon"] = tid
+        elif act == "doctor": g["actions"]["doctor"] = tid
+        elif act == "anesthetist": g["actions"]["anesthetist"] = tid; g["sedated_current"].add(tid)
+        elif act == "observer": g["actions"]["observer"] = tid
+        elif act == "nurse": g["actions"]["nurse"] = tid
+        elif act == "security": g["actions"]["security"] = tid
+        elif act == "screamer_knife": g["actions"]["screamer_knife"] = uid
+        elif act == "screamer_hide": pass # Just mark as acted
+        elif act == "swapper":
+            g["swap_data"] = {"first": tid}
+            send_swapper2 = True
+        elif act == "swapper2":
+            g["swap_data"]["second"] = tid
+            g["actions"]["swapper"] = (g["swap_data"]["first"], tid)
+        elif act == "patient":
+            dr = g["players"][tid]["role"]
+            g["players"][uid]["role"] = dr
+            g["patient_used"].add(uid)
+            if dr == "Security": g["security_ammo"][uid] = 2; g["security_mistakes"][uid] = 0
+
+        if act != "swapper": g["night_acted"].add(uid)
+
+    if send_swapper2:
+        with bot_lock: tgts = get_alive_except(cid, uid)
+        mk = types.InlineKeyboardMarkup(row_width=1)
+        for u, p in tgts.items():
+            if u != tid: mk.add(types.InlineKeyboardButton(f"🔀 {p['name']}", callback_data=f"act_{cid}_{u}_swapper2"))
+        try: bot.edit_message_text("🛏 <b>اختر الطرف الثاني لإتمام التبديل:</b>", uid, call.message.message_id, parse_mode="HTML", reply_markup=mk)
+        except: pass
+        return
+
+    bot.answer_callback_query(call.id, "✅ تم تسجيل حركتك.", show_alert=False)
+    try: bot.edit_message_text("✅ <b>تم اتخاذ القرار سراً.</b>\n\nتراجع في الظلام وانتظر بزوغ الفجر لترى نتائج أفعالك...", uid, call.message.message_id, parse_mode="HTML")
+    except: pass
+
+# ══════════════ معالجة نتائج الليل والإعلانات المذهلة ══════════════
+def resolve_night(cid, expected_rnd, expected_gid):
+    with bot_lock:
+        if not valid_game(cid, expected_gid): return
+        g = games[cid]
+        g["phase"] = "morning"
+        pp = g["players"]
+        actions = g["actions"]
+        sedated = g["sedated_current"]
+        
+        # Swaps
+        swaps = {}
+        if "swapper" in actions:
+            a, b = actions["swapper"]
+            if pp.get(a, {}).get("alive") and pp.get(b, {}).get("alive"): swaps[a] = b; swaps[b] = a
+        def sw(t): return swaps.get(t, t) if t else t
+
+        s_uid = next((u for u, p in pp.items() if p["role"] == "Surgeon" and p["alive"]), None)
+        d_uid = next((u for u, p in pp.items() if p["role"] == "Doctor" and p["alive"]), None)
+        sec_uid = next((u for u, p in pp.items() if p["role"] == "Security" and p["alive"]), None)
+        n_uid = next((u for u, p in pp.items() if p["role"] == "Nurse" and p["alive"]), None)
+        obs_uid = next((u for u, p in pp.items() if p["role"] == "Observer" and p["alive"]), None)
+
+        s_tgt = sw(actions.get("surgeon"))
+        d_tgt = sw(actions.get("doctor"))
+        sec_tgt = sw(actions.get("security"))
+        n_tgt = sw(actions.get("nurse"))
+        obs_tgt = sw(actions.get("observer"))
+
+        # Build Real Visitors Map
+        real_visitors = {}
+        if s_tgt and s_uid not in sedated: real_visitors.setdefault(s_tgt, []).append(s_uid)
+        if d_tgt and d_uid not in sedated: real_visitors.setdefault(d_tgt, []).append(d_uid)
+        if sec_tgt and sec_uid not in sedated: real_visitors.setdefault(sec_tgt, []).append(sec_uid)
+        if n_tgt and n_uid not in sedated: real_visitors.setdefault(n_tgt, []).append(n_uid)
+        if obs_tgt and obs_uid not in sedated: real_visitors.setdefault(obs_tgt, []).append(obs_uid)
+
+        # Screamer Knife Logic
+        screamer_kills = []
+        knife_user = actions.get("screamer_knife") # Who clicked use knife tonight
+        if knife_user and knife_user in pp and pp[knife_user]["alive"]:
+            vis = real_visitors.get(knife_user, [])
+            if vis:
+                g["screamer_knife_used"].add(knife_user) 
+                for v_uid in vis:
+                    screamer_kills.append({"screamer": knife_user, "victim": v_uid})
+                    if v_uid == s_uid and s_tgt == knife_user: s_tgt = None 
+
+        # Surgeon Kill Logic
+        victim = None
+        saved = False
+        d_failed = False
+        
+        if actions.get("doctor") and random.random() < DOCTOR_FAIL_CHANCE: d_failed = True
+
+        if s_tgt and s_tgt in pp:
+            if d_tgt == s_tgt and not d_failed: saved = True
+            elif has_item(s_tgt, "shield"): use_item(s_tgt, "shield"); saved = True
+            else: victim = s_tgt
+
+        # Security Kill Logic
+        sec_victim = None
+        sec_suicide = False
+        if sec_tgt and sec_uid and sec_uid not in sedated:
+            g["security_ammo"][sec_uid] = g["security_ammo"].get(sec_uid, 2) - 1
+            if sec_tgt != victim and sec_tgt not in [k["victim"] for k in screamer_kills]:
+                if d_tgt == sec_tgt and not d_failed: saved = True
+                else:
+                    sec_victim = sec_tgt
+                    if ROLE_TEAM.get(pp[sec_victim]["role"]) == "good":
+                        g["security_mistakes"][sec_uid] = g["security_mistakes"].get(sec_uid, 0) + 1
+                        if g["security_mistakes"][sec_uid] >= 2: sec_suicide = True
+
+        # Nurse Kill Logic
+        nurse_victim = None
+        nurse_suicide = False
+        if n_tgt and n_uid and n_uid not in sedated:
+            if n_tgt != victim and n_tgt not in [k["victim"] for k in screamer_kills] and n_tgt != sec_victim:
+                nurse_victim = n_tgt
+                if ROLE_TEAM.get(pp[nurse_victim]["role"]) not in ("evil", "psycho"): nurse_suicide = True
+
+    # ---- الإعلانات الصباحية ----
+    try: bot.send_photo(cid, ASSETS["DAY"], caption="🌅 <b>بزغ الفجر على المستشفى...</b>\n\nتُفتح الأبواب الثقيلة، ويبدأ الجميع بتفقد العنابر.", parse_mode="HTML")
+    except: safe_send(cid, "🌅 <b>بزغ الفجر على المستشفى...</b>\n\nتُفتح الأبواب الثقيلة، ويبدأ الجميع بتفقد العنابر.")
+    
+    if not safe_sleep(cid, expected_gid, 3): return
+
+    # Screamer Fear Kills
+    for k in screamer_kills:
+        scr = k["screamer"]
+        vic = k["victim"]
+        with bot_lock: kill_player(g, vic)
+        safe_send(cid, f"😱🔪 <b>دماء بدافع الهلع الأعمى!</b>\nالمرعوب <b>{pp[scr]['name']}</b> فقد عقله من الخوف، واستل سكيناً ليطعن من اقترب من سريره!\n\nسقط <b>{pp[vic]['name']}</b> صريعاً على الفور.\n\n🎭 بطاقة الضحية: <b>{ROLE_DISPLAY.get(pp[vic]['role'], '?')}</b>")
+        safe_sleep(cid, expected_gid, 2)
+
+    # Doctor Fail
+    if d_failed and d_tgt and d_tgt not in [k["victim"] for k in screamer_kills]:
+        with bot_lock: kill_player(g, d_tgt)
+        safe_send(cid, f"💉💀 <b>كارثة طبية!</b>\nاللاعب <b>{pp[d_tgt]['name']}</b> فارق الحياة إثر خطأ كارثي في جرعة الطبيب!\n\n🎭 هويته: <b>{ROLE_DISPLAY.get(pp[d_tgt]['role'], '?')}</b>")
+        safe_sleep(cid, expected_gid, 2)
+    
+    if saved: safe_send(cid, "✨ <b>تدخل ملائكي!</b>\nأحدهم نجا من موت محقق الليلة الماضية بفضل رعاية طبية أو درع خفي.")
+    
+    # Surgeon Kill / Screamer Scream (if no knife used)
+    if victim:
+        with bot_lock: kill_player(g, victim)
+        
+        if pp[victim]["role"] == "Screamer" and victim != knife_user:
+            safe_send(cid, f"😱 <b>صراخ يتبعه صمت مميت!</b>\nالمرعوب <b>{pp[victim]['name']}</b> صرخ بأعلى صوته: <i>\"النجدة! {pp[s_uid]['name']} هو الجرّاح الذي يقتلنا!!\"</i>\nلكن المشرط كان أسرع بكثير...\n\n🔪💀 مات المرعوب.\n🎭 هويته: <b>{ROLE_DISPLAY.get(pp[victim]['role'], '?')}</b>")
+        else:
+            safe_send(cid, f"🔪💀 <b>جريمة بشعة!</b>\nوُجد <b>{pp[victim]['name']}</b> ممزقاً بمشرط الجراح في بركة من الدماء.\n\n🎭 بطاقته الملطخة تشير إلى أنه كان: <b>{ROLE_DISPLAY.get(pp[victim]['role'], '?')}</b>")
+        
+        with bot_lock: g["last_gasp_pending"][victim] = True
+        safe_pm(victim, f"🩸 <b>أنت تحتضر...</b>\nلديك {LAST_GASP_TIME} ثانية لكتابة كلماتك الأخيرة التي ستُقرأ على مسامع الجميع. (اكتبها هنا):")
+        safe_sleep(cid, expected_gid, LAST_GASP_TIME)
+        with bot_lock: txt = g["last_gasp_text"].get(victim)
+        if txt: safe_send(cid, f"🩸 <i>الكلمات الأخيرة لـ {pp[victim]['name']}:</i>\n\n«{txt}»")
+
+    # Security Kill
+    if sec_victim:
+        with bot_lock: kill_player(g, sec_victim)
+        safe_send(cid, f"🔫💀 <b>طلقة نارية كسرت السكون!</b>\nسقط <b>{pp[sec_victim]['name']}</b> برصاص حارس الأمن.\n\n🎭 هويته: <b>{ROLE_DISPLAY.get(pp[sec_victim]['role'], '?')}</b>")
+        safe_sleep(cid, expected_gid, 2)
+        if sec_suicide:
+            with bot_lock: kill_player(g, sec_uid)
+            safe_send(cid, f"🔥💀 <b>غضب الأبرياء!</b>\nحارس الأمن <b>{pp[sec_uid]['name']}</b> أخطأ للمرة الثانية وقتل بريئاً آخر! لم يتحمل بقية المرضى رعونته، فقاموا برميه حياً في المحرقة في الصباح.\n\n🎭 كان يحمل شارة: <b>{ROLE_DISPLAY.get(pp[sec_uid]['role'], '?')}</b>")
+
+    # Nurse Kill
+    if nurse_victim:
+        with bot_lock: kill_player(g, nurse_victim)
+        safe_send(cid, f"💊💀 <b>تسمم حاد!</b>\nلفظ <b>{pp[nurse_victim]['name']}</b> أنفاسه الأخيرة إثر حقنة مسمومة من الممرض.\n\n🎭 هويته: <b>{ROLE_DISPLAY.get(pp[nurse_victim]['role'], '?')}</b>")
+        safe_sleep(cid, expected_gid, 2)
+        if nurse_suicide:
+            with bot_lock: kill_player(g, n_uid)
+            safe_send(cid, f"🧪💀 <b>انتحار!</b>\nالممرض <b>{pp[n_uid]['name']}</b> اكتشف خطأه وشرب السم ليلحق بضحيته البريئة.\n\n🎭 كان: <b>{ROLE_DISPLAY.get(pp[n_uid]['role'], '?')}</b>")
+
+    if check_win_safe(cid, expected_gid): return
+    
+    # Regular Screamer visits (didn't use knife, and didn't die to surgeon)
+    with bot_lock:
+        screamers = [u for u, p in pp.items() if p["role"] == "Screamer" and p["alive"]]
+    
+    for scr_uid in screamers:
+        if scr_uid != knife_user:
+            vis = real_visitors.get(scr_uid, [])
+            for v_uid in vis:
+                if v_uid != s_uid: 
+                    safe_send(cid, f"😱 <b>صراخ يمزق الأروقة!</b>\nالمرعوب <b>{pp[scr_uid]['name']}</b> يصرخ بهستيريا: <i>\"لقد رأيت {pp[v_uid]['name']} يتجول حول سريري في الظلام!!\"</i>")
+                    safe_sleep(cid, expected_gid, 1)
+
+    # Observer Logic
+    if obs_uid and obs_tgt and obs_tgt in pp:
+        safe_pm(obs_uid, f"👁 <b>الرؤية واضحة عبر الكاميرات:</b>\nاللاعب {pp[obs_tgt]['name']} يخفي خلفه دور: <b>{ROLE_DISPLAY.get(pp[obs_tgt]['role'], '?')}</b>")
+
+    start_discussion(cid, expected_gid)
+
+# ══════════════ النقاش والتصويت (HOSPITAL) ══════════════
+def start_discussion(cid, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        games[cid]["phase"] = "discussion"
+        alive_count = len(get_alive(cid))
+    
+    open_discussion(cid)
+    safe_send(cid, f"💬 <b>فتح باب النقاش ({DISCUSS_TIME} ثانية)</b>\n\n👥 الأحياء المتبقون: <b>{alive_count}</b>\n\nالكلمة لكم الآن! تبادلوا الشكوك، دافعوا عن أنفسكم، وحللوا ما حدث. القاتل يجلس بينكم.")
+    
+    if not safe_sleep(cid, gid, DISCUSS_TIME): return
+    start_voting(cid, gid)
+
+def start_voting(cid, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        games[cid]["phase"] = "voting"
+        games[cid]["votes"] = {}
+    
+    silence_all(cid)
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("⚖️ التصويت للإعدام بالمحرقة", url=f"https://t.me/{BOT_USERNAME}?start=v_{cid}"))
+    msg = safe_send(cid, f"⚖️ <b>المحاكمة تبدأ ({VOTE_TIME} ثانية)</b>\n\nاضغطوا على الزر أدناه لاختيار من سيتم رميه في المحرقة اليوم.", reply_markup=mk)
+    if msg: safe_pin(cid, msg.message_id)
+    
+    if not safe_sleep(cid, gid, VOTE_TIME): return
+    tally_trial(cid, gid)
+
+def tally_trial(cid, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        valid_votes = {k: v for k, v in g["votes"].items() if k in g["players"] and g["players"][k]["alive"]}
+        
+    safe_unpin_all(cid)
+    if not valid_votes:
+        safe_send(cid, "🤷 <b>انتهى الوقت بصمت...</b>\nلم يتجرأ أحد على توجيه تهمة. ستستمر الحياة يوماً آخر.")
+        return start_room_choosing(cid, gid)
+
+    counts = {}
+    for t in valid_votes.values(): counts[t] = counts.get(t, 0) + 1
+    top_v = max(counts.values())
+    candidates = [k for k, v in counts.items() if v == top_v]
+
+    txt = "📩 <b>صناديق الاقتراع أفرزت التالي:</b>\n\n"
+    for v_uid, t_uid in valid_votes.items():
+        txt += f"🔸 {g['players'][v_uid]['name']} صوّت ضد <b>{g['players'][t_uid]['name']}</b>\n"
+    safe_send(cid, txt)
+    
+    if len(candidates) == 1: start_defense(cid, gid, candidates[0])
+    else:
+        safe_send(cid, "🤝 <b>انقسام في الآراء!</b>\nتساوت الأصوات، ولا توجد أغلبية. لن يُعدم أحد اليوم.")
+        start_room_choosing(cid, gid)
+
+def start_defense(cid, gid, sus):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        g["phase"] = "defense"
+        g["defense_target"] = sus
+        sus_name = g["players"][sus]["name"]
+    
+    open_discussion(cid)
+    safe_send(cid, f"🎤 <b>اللاعب {sus_name} في قفص الاتهام!</b>\n\nلديك <b>{DEFENSE_TIME} ثانية</b> للدفاع عن نفسك وإثبات براءتك، وللآخرين حق الرد.")
+    
+    if not safe_sleep(cid, gid, DEFENSE_TIME): return
+    
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        g["phase"] = "confirming"
+        g["confirm_votes"] = {"yes": set(), "no": set()}
+    
+    silence_all(cid)
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("🔥 إعدام", callback_data=f"cf_{cid}_y"),
+           types.InlineKeyboardButton("🕊 براءة", callback_data=f"cf_{cid}_n"))
+    safe_send(cid, "⚖️ <b>القرار النهائي للجمهور:</b>\nهل يُعدم أم يُبرأ؟", reply_markup=mk)
+    
+    if not safe_sleep(cid, gid, CONFIRM_TIME): return
+    resolve_confirm(cid, gid)
+
+def resolve_confirm(cid, gid):
+    with bot_lock:
+        if not valid_game(cid, gid): return
+        g = games[cid]
+        sus = g["defense_target"]
+        if not sus: return 
+        yes = len(g["confirm_votes"]["yes"])
+        no = len(g["confirm_votes"]["no"])
+        sus_p = g["players"].get(sus, {})
+        
+    if yes > no:
+        with bot_lock: kill_player(g, sus)
+        safe_send(cid, f"🔥 <b>تم تنفيذ حكم الإعدام بالمحرقة بحق {sus_p['name']}!</b>\n\n🎭 عند تفتيش أغراضه، اتضح أنه كان: <b>{ROLE_DISPLAY.get(sus_p['role'], '?')}</b>")
+        
+        if sus_p["role"] == "Psychopath":
+            with bot_lock: bomb_q = g["bomb"]["q"]
+            if bomb_q:
+                safe_send(cid, f"🤡 <b>ضحكات هيستيرية تملأ المكان!</b>\nالمجنون خدعكم وتُركت قنبلة موقوتة قبل موته!\n\n❓ <b>اللغز/الشفرة:</b> {bomb_q}\n\n<i>⏳ أمامكم {BOMB_TIME} ثانية لفك الشفرة والنجاة! أرسلوا الإجابة هنا في المجمموعة.</i>")
+                open_discussion(cid)
+                with bot_lock: g["phase"] = "bomb"
+                
+                t_end = time.time() + BOMB_TIME
+                while time.time() < t_end:
+                    time.sleep(1)
+                    with bot_lock:
+                        if not valid_game(cid, gid): return
+                        if g["phase"] == "defused": break
+                
+                with bot_lock: phase = g["phase"]
+                if phase == "defused":
+                    d_name = g["players"][g["bomb"]["defuser"]]["name"]
+                    safe_send(cid, f"✅ <b>تم إبطال الكارثة!</b>\nاللاعب <b>{d_name}</b> تمكن من فك الشفرة وإيقاف المؤقت في اللحظة الأخيرة.")
+                else:
+                    safe_send(cid, f"💥 <b>BOOOOOM!</b>\n\nالقنبلة انفجرت ودمرت المستشفى بأكمله فوق رؤوسكم.\nالجواب الصحيح كان: {g['bomb']['a']}")
+                    show_results(cid, "🤡 <b>المجنون العبقري!</b>\nلقد خدع الجميع، مات ولكنه أخذ المستشفى معه إلى الجحيم منتصراً.")
+                    return
+
+        if check_win_safe(cid, gid): return
+    else:
+        safe_send(cid, "🕊 <b>عفو عام...</b>\nلقد تمت تبرئته بقرار الأغلبية وسيعود لسريره.")
+    
+    start_room_choosing(cid, gid)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("vote_"))
+def cb_vote(call):
+    uid = call.from_user.id
+    try: cid, tid = int(call.data.split("_")[1]), int(call.data.split("_")[2])
+    except: return
+    with bot_lock:
+        if cid not in games: return bot.answer_callback_query(call.id, "⛔", show_alert=True)
+        g = games[cid]
+        if g["phase"] != "voting": return bot.answer_callback_query(call.id, "⏰ التصويت مغلق.", show_alert=True)
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return bot.answer_callback_query(call.id, "❌", show_alert=True)
+        g["votes"][uid] = tid
+    bot.answer_callback_query(call.id, "✅ تم إيداع صوتك السري في الصندوق.", show_alert=False)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("cf_"))
+def cb_confirm(call):
+    uid = call.from_user.id
+    try: cid, ch = int(call.data.split("_")[1]), call.data.split("_")[2]
+    except: return
+    with bot_lock:
+        if cid not in games or games[cid]["phase"] != "confirming": return
+        g = games[cid]
+        if uid not in g["players"] or not g["players"][uid]["alive"]: return
+        if uid == g["defense_target"]: return bot.answer_callback_query(call.id, "❌ أنت المتهم! لا يحق لك التصويت هنا.", show_alert=True)
+        
+        cv = g["confirm_votes"]
+        cv["yes"].discard(uid); cv["no"].discard(uid)
+        if ch == "y": cv["yes"].add(uid)
+        else: cv["no"].add(uid)
+        
+        y, n = len(cv["yes"]), len(cv["no"])
+        
+    mk = types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton(f"🔥 إعدام ({y})", callback_data=f"cf_{cid}_y"),
+           types.InlineKeyboardButton(f"🕊 براءة ({n})", callback_data=f"cf_{cid}_n"))
+    try: bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=mk)
+    except: pass
+    bot.answer_callback_query(call.id, "✅ سُجل قرارك.", show_alert=False)
+
+# ══════════════ الرسائل الخاصة والرسائل المباشرة ══════════════
+@bot.message_handler(commands=['start'], chat_types=['private'])
+def start_pm(m):
+    args = m.text.split()
+    if len(args) > 1:
+        param = args[1]
+        uid = m.from_user.id
+        
+        if param.startswith("room_"): dispatch_room(uid, param)
+        elif param.startswith("night_"): dispatch_night(uid, param)
+        elif param.startswith("v_"):
+            try: cid = int(param.replace("v_", ""))
+            except: return
+            with bot_lock:
+                if cid in games and games[cid]["phase"] == "voting":
+                    alive = get_alive(cid)
+                    mk = types.InlineKeyboardMarkup(row_width=1)
+                    for u, p in alive.items():
+                        if u != uid: mk.add(types.InlineKeyboardButton(p["name"], callback_data=f"vote_{cid}_{u}"))
+                    safe_pm(uid, "⚖️ <b>صندوق الاقتراع:</b>\nاختر من ترغب في إرساله للمحرقة:", reply_markup=mk)
+                    
+        elif param.startswith("ask_"):
+            try: cid = int(param.replace("ask_", ""))
+            except: return
+            with bot_lock:
+                if cid in games and games[cid].get("asker") == uid and games[cid]["phase"] == "waiting_q":
+                    mk = types.InlineKeyboardMarkup(row_width=1)
+                    mk.add(types.InlineKeyboardButton("🗳 تصويت مباشر (للجميع)", callback_data=f"asktype_{cid}_vote"),
+                           types.InlineKeyboardButton("💬 جلسة نقاش وجمع حجج", callback_data=f"asktype_{cid}_qa"))
+                    safe_pm(uid, "🎤 <b>المنصة لك!</b>\nكيف ترغب في إدارة جلستك في المجلس؟", reply_markup=mk)
+                    
+        elif param.startswith("qa_"):
+            try: cid = int(param.replace("qa_", ""))
+            except: return
+            with bot_lock:
+                if cid in games and games[cid]["phase"] == "answering":
+                    safe_pm(uid, "✍️ <b>المنصة مفتوحة:</b>\nاكتب حجتك أو رأيك في رسالة واحدة وأرسلها هنا:")
+                    
+        elif param.startswith("role_"): 
+            try: cid = int(param.replace("role_", ""))
+            except: return
+            with bot_lock:
+                if cid in games and uid in games[cid]["players"]:
+                    role = games[cid]["players"][uid]["role"]
+                    guide = ROLE_GUIDE_SHORT.get(role, f"🎭 دورك: <b>{ROLE_DISPLAY.get(role, role)}</b>")
+                    safe_pm(uid, f"📇 <b>ملفك السري:</b>\n\n{guide}")
+        return
+    safe_pm(m.from_user.id, "أهلاً بك. هذا البوت مخصص لإدارة لعبة المستشفى المرعب والمحاكمة.")
+
+@bot.message_handler(func=lambda m: m.chat.type == "private" and m.text and not m.text.startswith("/"))
+def pm_handler_special(msg):
+    uid = msg.from_user.id
+    text = msg.text.strip()
+
+    with bot_lock:
+        cid = user_to_game.get(uid)
+        if not cid or cid not in games: return
+        g = games[cid]
+        
+        # Room logic
+        if g["type"] == "hospital" and g["phase"] == "night" and g["players"].get(uid, {}).get("alive"):
+            my_room = get_player_room(g, uid)
+            if my_room:
+                my_name = g["players"][uid]["name"]
+                if my_room == 5:
+                    for u in get_room_players(g, 5):
+                        if u != uid: safe_pm(u, f"🌑 <b>{my_name} (من الممر المظلم):</b> {clean(text)}")
+                    corrupted = corrupt_text(text)
+                    for u in [u for u, p in g["players"].items() if p["alive"] and g["room_choices"].get(u) != 5]:
+                        safe_pm(u, f"👻 <b>(صوت خافت قادم من الممر):</b> {clean(corrupted)}")
+                else:
+                    for u in get_room_players(g, my_room):
+                        if u != uid: safe_pm(u, f"🏠 <b>{my_name}:</b> {clean(text)}")
+                return
+
+        # Psychopath logic
+        if g["players"].get(uid, {}).get("role") == "Psychopath":
+            step = g["psycho_phase"].get(uid)
+            if step == "q":
+                g["bomb"]["q"] = clean(text, 100); g["psycho_phase"][uid] = "a"
+                safe_pm(uid, "✅ <b>ممتاز!</b>\nالآن أرسل لي 'الجواب الصحيح' بكلمة واحدة لتكتمل الشفرة:")
+                return
+            if step == "a":
+                g["bomb"]["a"] = normalize_arabic(text); g["bomb"]["is_set"] = True; g["psycho_phase"][uid] = "done"
+                safe_pm(uid, "💣 <b>اكتمل الفخ!</b>\nقنبلتك جاهزة. نم الآن بسلام.")
+                return
+                
+        # Last gasp logic
+        if g["last_gasp_pending"].get(uid):
+            g["last_gasp_text"][uid] = clean(text, 300); g["last_gasp_pending"][uid] = False
+            safe_pm(uid, "🩸 تم تسطير كلماتك بدمائك. ارقد بسلام.")
+            return
+
+        # Vote game logic
+        if g["type"] == "vote":
+            if g["phase"] == "waiting_q" and g.get("asker") == uid and g.get("ask_type_chosen"):
+                g["vote_question"] = clean(text, 200)
+                if g["ask_type"] == "vote": 
+                    g["phase"] = "voting_active"
+                    send_vote_q(cid, uid, g["vote_question"])
+                else: 
+                    g["phase"] = "answering"
+                    send_qa_q(cid, uid, g["vote_question"])
+                safe_pm(uid, "✅ <b>تم طرح قضيتك على المجلس!</b>")
+                return
+
+            if g["phase"] == "answering" and uid in g["qa_answer_pending"]:
+                g["qa_answer_pending"].remove(uid)
+                g["qa_answers"][uid] = {"text": clean(text, 200), "reveal": True}
+                
+                mk = types.InlineKeyboardMarkup()
+                mk.add(types.InlineKeyboardButton("✅ باسمي الحقيقي", callback_data=f"reveal_{cid}_{uid}_y"),
+                       types.InlineKeyboardButton("🎭 كشف مجهول", callback_data=f"reveal_{cid}_{uid}_n"))
+                safe_pm(uid, "✅ <b>تم تدوين حجتك.</b>\nهل تريد عرضها باسمك أم بشكل مجهول؟", reply_markup=mk)
+                return
+
+@bot.message_handler(content_types=['text'], func=lambda m: m.chat.type in ("group", "supergroup") and not (m.text or "").startswith("/"))
+def group_msg_filter(m):
+    cid, uid = m.chat.id, m.from_user.id
+    text = m.text or ""
+    do_delete = False
+
+    with bot_lock:
+        if cid not in games: return
+        g = games[cid]
+        phase = g["phase"]
+
+        if phase == "bomb":
+            if uid not in g["players"] or not g["players"][uid]["alive"]: do_delete = True
+            elif text:
+                if normalize_arabic(text) == g["bomb"]["a"]:
+                    g["phase"] = "defused"; g["bomb"]["defuser"] = uid
+                else: do_delete = True
+            else: do_delete = True
+            if do_delete: delete_msg(cid, m.message_id)
+            return
+
+        if uid in g["players"] and not g["players"][uid]["alive"]: do_delete = True
+
+    if do_delete: delete_msg(cid, m.message_id)
+
+# ══════════════ تشغيل البوت النهائي ══════════════
+print(">>> Bot is Fully Operational and Ready! <<<")
 while True:
     try:
-        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60, allowed_updates=)
+        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
     except Exception as e:
-        print(f"Polling Crash: {e}")
+        print(f"Polling Error: {e}")
         time.sleep(5)
